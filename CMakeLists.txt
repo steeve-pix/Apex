@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(Apex VERSION 0.1.0 LANGUAGES CXX)
+project(Apex VERSION 0.1.0 LANGUAGES C CXX)
 
 include(FetchContent)
 
@@ -17,9 +17,24 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(glfw)
 
-add_executable(apex src/main.cpp)
+FetchContent_Declare(
+        glad
+        GIT_REPOSITORY https://github.com/Dav1dde/glad.git
+        GIT_TAG v2.0.8
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR cmake
+)
 
-target_link_libraries(apex PRIVATE glfw)
+FetchContent_MakeAvailable(glad)
+
+glad_add_library(apex_glad STATIC
+        REPRODUCIBLE
+        API gl:core=3.3
+        EXTENSIONS NONE
+)
+
+add_executable(apex src/main.cpp)
+target_link_libraries(apex PRIVATE glfw apex_glad)
 
 target_compile_features(apex PRIVATE cxx_std_20)
 
