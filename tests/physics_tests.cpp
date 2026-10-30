@@ -1,9 +1,11 @@
 #include <simulation/body.hpp>
+#include <simulation/vehicle.hpp>
 
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <numbers>
 
 namespace {
     void expect_near(double actual, double expected, const char *label) {
@@ -29,6 +31,10 @@ int main() {
         using apex::simulation::integrate;
         using apex::simulation::MotionSettings;
         using apex::simulation::update_body;
+        using apex::simulation::VehicleState;
+        using apex::simulation::VehicleControls;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::update_vehicle;
 
         Body2D body{Vec2{1.0, -1.0}, Vec2{2.0, -3.0}};
 
@@ -91,6 +97,43 @@ int main() {
         expect_near(resting.position.y, 0.0, "Resting position y");
         expect_near(resting.velocity.x, 0.0, "Resting velocity x");
         expect_near(resting.velocity.y, 0.0, "Resting velocity y");
+
+        VehicleSettings vehicle_settings{};
+        vehicle_settings.turn_rate = 2.0;
+        vehicle_settings.motion.acceleration_strength = 2.0;
+        vehicle_settings.motion.linear_drag = 0.0;
+
+        // Two radians per second for a quarter second gives 0.5 radians.
+        VehicleState turning{};
+        const VehicleControls turn_left{.steering = 1.0};
+
+        update_vehicle(turning, turn_left, vehicle_settings, 0.25);
+
+        expect_near(turning.heading, 0.5, "Steering over elapsed time");
+
+        // Zero elapsed time must leave the heading unchanged.
+        const double previous_heading = turning.heading;
+
+        update_vehicle(turning, turn_left, vehicle_settings, 0.0);
+
+        expect_near(
+            turning.heading,
+            previous_heading,
+            "Zero-time steering"
+        );
+
+        // Facing upward must produce upward acceleration.
+        VehicleState accelerating{};
+        accelerating.heading = std::numbers::pi_v<double> / 2.0;
+
+        const VehicleControls throttle{.throttle = 1.0};
+
+        update_vehicle(accelerating, throttle, vehicle_settings, 0.5);
+
+        expect_near(accelerating.body.velocity.x, 0.0, "Forward velocity x");
+        expect_near(accelerating.body.velocity.y, 1.0, "Forward velocity y");
+        expect_near(accelerating.body.position.x, 0.0, "Forward position x");
+        expect_near(accelerating.body.position.y, 0.25, "Forward position y");
 
         std::cout << "Physics checks passed.\n";
 

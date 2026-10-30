@@ -12,8 +12,7 @@
 #include "graphics/shader.hpp"
 #include "graphics/shader_program.hpp"
 #include "graphics/triangle.hpp"
-#include "math/vec2.hpp"
-#include "simulation/body.hpp"
+#include "simulation/vehicle.hpp"
 
 namespace {
     constexpr int window_width = 1200;
@@ -30,9 +29,18 @@ namespace {
 
         uniform vec2 offset;
         uniform vec2 view_scale;
+        uniform float heading;
 
         void main() {
-            gl_Position = vec4((position + offset) * view_scale, 0.0, 1.0);
+            float c = cos(heading);
+            float s = sin(heading);
+
+            vec2 rotated_position = vec2(
+                c * position.x - s * position.y,
+                s * position.x +c * position.y
+            );
+
+            gl_Position = vec4((rotated_position + offset) * view_scale, 0.0, 1.0);
         }
     )glsl";
 
@@ -54,36 +62,32 @@ namespace {
 
     using Window = std::unique_ptr<GLFWwindow, WindowDeleter>;
 
-    apex::math::Vec2 read_movement_direction(GLFWwindow *window) {
-        apex::math::Vec2 direction{};
+    apex::simulation::VehicleControls read_vehicle_controls(
+        GLFWwindow *window
+    ) {
+        apex::simulation::VehicleControls controls{};
 
-        if (glfwGetKey(window,GLFW_KEY_RIGHT) == GLFW_PRESS ||
-            glfwGetKey(window,GLFW_KEY_D) == GLFW_PRESS) {
-            direction.x += 1.0;
-        }
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            direction.x -= 1.0;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+            controls.throttle += 1.0;
         }
 
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            direction.y += 1.0;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            controls.throttle -= 1.0;
         }
 
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            direction.y -= 1.0;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+            controls.steering += 1.0;
         }
 
-        const double length = std::hypot(direction.x, direction.y);
-
-        if (length > 0.0) {
-            direction.x /= length;
-            direction.y /= length;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+            controls.steering -= 1.0;
         }
 
-        return direction;
+        return controls;
     }
 }
 
@@ -135,6 +139,8 @@ int main() {
         program.link(vertex_shader, fragment_shader);
         const GLint offset_location = program.uniform_location("offset");
         const GLint view_scale_location = program.uniform_location("view_scale");
+        const GLint heading_location =
+                program.uniform_location("heading");
 
         std::cout << "Shader program linked successfully.\n";
 
@@ -143,8 +149,8 @@ int main() {
         glClearColor(0.04f, 0.12f, 0.14f, 1.0f);
 
         double previous_time = glfwGetTime();
-        constexpr apex::simulation::MotionSettings motion_settings{};
-        apex::simulation::Body2D body{};
+        const apex::simulation::VehicleSettings vehicle_settings{};
+        apex::simulation::VehicleState vehicle{};
 
         constexpr double physics_step = 1.0 / 120.0;
         constexpr double max_frame_time = 0.25;
@@ -171,13 +177,13 @@ int main() {
                 continue;
             }
 
-            const auto direction = read_movement_direction(window.get());
+            const auto controls = read_vehicle_controls(window.get());
 
             accumulator +=
-                std::min(delta_time, max_frame_time);
+                    std::min(delta_time, max_frame_time);
 
             while (accumulator >= physics_step) {
-                apex::simulation::update_body(body, direction, motion_settings, physics_step);
+                apex::simulation::update_vehicle(vehicle, controls, vehicle_settings, physics_step);
 
                 accumulator -= physics_step;
             }
@@ -197,7 +203,10 @@ int main() {
             } else {
                 glUniform2f(view_scale_location, 1.0F, aspect);
             }
-            glUniform2f(offset_location, static_cast<float>(body.position.x), static_cast<float>(body.position.y));
+            glUniform2f(offset_location, static_cast<float>(vehicle.body.position.x),
+                        static_cast<float>(vehicle.body.position.y));
+
+            glUniform1f(heading_location, static_cast<float>(vehicle.heading));
 
             triangle.draw();
 

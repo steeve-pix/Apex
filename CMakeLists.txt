@@ -33,7 +33,8 @@ glad_add_library(apex_glad STATIC
         EXTENSIONS NONE
 )
 add_library(apex_simulation STATIC
-        src/simulation/body.cpp)
+        src/simulation/body.cpp
+        src/simulation/vehicle.cpp)
 
 target_include_directories(apex_simulation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
