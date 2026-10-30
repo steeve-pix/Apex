@@ -68,3 +68,10 @@ Testing/
 .cache/
 
 /.idea
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+.DS_Store
