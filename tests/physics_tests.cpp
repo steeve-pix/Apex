@@ -6,6 +6,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <numbers>
+#include <array>
 
 namespace {
     void expect_near(double actual, double expected, const char *label) {
@@ -56,6 +57,56 @@ namespace {
         update_vehicle(grip_disabled, no_input, settings, dt);
         expect_near(grip_disabled.body.velocity.x, -1.0, "Zero-grip sideways velocity");
         expect_near(grip_disabled.body.velocity.y, 3.0, "Zero-grip forward velocity");
+    }
+
+    void test_speed_dependent_steering() {
+        using apex::math::Vec2;
+        using apex::simulation::VehicleControls;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::VehicleState;
+        using apex::simulation::update_vehicle;
+
+        VehicleSettings settings{};
+        settings.wheelbase = 1.0;
+        settings.max_steering_angle =
+                std::numbers::pi_v<double> / 4.0;
+
+        settings.motion.linear_drag = 0.0;
+        settings.lateral_grip = 0.0;
+
+        struct SteeringCase {
+            double speed;
+            double steering;
+            double expected_heading;
+            const char *label;
+        };
+
+        constexpr std::array cases{
+            SteeringCase{0.0, 1.0, 0.0, "Stationary"},
+            SteeringCase{2.0, 1.0, 0.5, "Forward left"},
+            SteeringCase{4.0, 1.0, 1.0, "Double speed"},
+            SteeringCase{-2.0, 1.0, -0.5, "Reverse left"},
+            SteeringCase{2.0, -1.0, -0.5, "Forward right"},
+            SteeringCase{-2.0, -1.0, 0.5, "Reverse right"},
+            SteeringCase{2.0, 3.0, 0.5, "Clamped steering"}
+        };
+
+        for (const auto &test_case: cases) {
+            VehicleState vehicle{};
+            vehicle.body.velocity = Vec2{test_case.speed, 0.0};
+
+            const VehicleControls controls{
+                .steering = test_case.steering
+            };
+
+            update_vehicle(vehicle, controls, settings, 0.25);
+
+            expect_near(
+                vehicle.heading,
+                test_case.expected_heading,
+                test_case.label
+            );
+        }
     }
 }
 
@@ -134,12 +185,15 @@ int main() {
         expect_near(resting.velocity.y, 0.0, "Resting velocity y");
 
         VehicleSettings vehicle_settings{};
-        vehicle_settings.turn_rate = 2.0;
+        vehicle_settings.wheelbase = 1.0;
+        vehicle_settings.max_steering_angle =
+                std::numbers::pi_v<double> / 4.0;
         vehicle_settings.motion.acceleration_strength = 2.0;
         vehicle_settings.motion.linear_drag = 0.0;
 
         // Two radians per second for a quarter second gives 0.5 radians.
         VehicleState turning{};
+        turning.body.velocity = Vec2{2.0, 0.0};
         const VehicleControls turn_left{.steering = 1.0};
 
         update_vehicle(turning, turn_left, vehicle_settings, 0.25);
@@ -151,11 +205,7 @@ int main() {
 
         update_vehicle(turning, turn_left, vehicle_settings, 0.0);
 
-        expect_near(
-            turning.heading,
-            previous_heading,
-            "Zero-time steering"
-        );
+        expect_near(turning.heading, previous_heading, "Zero-time steering");
 
         // Facing upward must produce upward acceleration.
         VehicleState accelerating{};
@@ -170,7 +220,14 @@ int main() {
         expect_near(accelerating.body.position.x, 0.0, "Forward position x");
         expect_near(accelerating.body.position.y, 0.25, "Forward position y");
 
+        VehicleState parked{};
+
+        update_vehicle(parked, turn_left, vehicle_settings, 0.25);
+
+        expect_near(parked.heading, 0.0, "Stationary steering must not rotate the vehicle");
+
         test_lateral_grip();
+        test_speed_dependent_steering();
 
         std::cout << "Physics checks passed.\n";
 

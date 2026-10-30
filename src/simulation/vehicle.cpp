@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <numbers>
+#include <algorithm>
+#include <stdexcept>
 
 namespace apex::simulation {
     void update_vehicle(VehicleState &vehicle, const VehicleControls &controls, const VehicleSettings &settings,
@@ -9,7 +11,25 @@ namespace apex::simulation {
         constexpr double full_turn =
                 2.0 * std::numbers::pi_v<double>;
 
-        vehicle.heading = std::remainder(vehicle.heading + controls.steering * settings.turn_rate * dt, full_turn);
+        if (!(settings.wheelbase > 0.0)) {
+            throw std::invalid_argument("Wheelbase must be positive");
+        }
+
+        const math::Vec2 previous_forward{
+            std::cos(vehicle.heading), std::sin(vehicle.heading)
+        };
+
+        const double forward_speed =
+                vehicle.body.velocity.x * previous_forward.x +
+                vehicle.body.velocity.y * previous_forward.y;
+
+        const double steering_angle =
+                std::clamp(controls.steering, -1.0, 1.0) * settings.max_steering_angle;
+
+        const double yaw_rate =
+                forward_speed / settings.wheelbase * std::tan(steering_angle);
+
+        vehicle.heading = std::remainder(vehicle.heading + yaw_rate * dt, full_turn);
 
         const math::Vec2 forward{std::cos(vehicle.heading), std::sin(vehicle.heading)};
 
