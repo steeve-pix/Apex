@@ -6,12 +6,15 @@
 #include <iostream>
 #include <stdexcept>
 #include <memory>
-#include <cmath>
 #include <algorithm>
+#include <numbers>
+
 #include "platform/glfw_session.hpp"
 #include "graphics/shader.hpp"
 #include "graphics/shader_program.hpp"
+#include "graphics/track_mesh.hpp"
 #include "graphics/triangle.hpp"
+#include "simulation/track.hpp"
 #include "simulation/vehicle.hpp"
 
 namespace {
@@ -47,10 +50,11 @@ namespace {
     constexpr char fragment_shader_source[] = R"glsl(
         #version 330 core
 
+        uniform vec3 color;
         out vec4 fragment_color;
 
         void main() {
-            fragment_color = vec4(0.95, 0.25, 0.12, 1.0);
+            fragment_color = vec4(color, 1.0);
         }
     )glsl";
 
@@ -141,16 +145,23 @@ int main() {
         const GLint view_scale_location = program.uniform_location("view_scale");
         const GLint heading_location =
                 program.uniform_location("heading");
+        const GLint color_location = program.uniform_location("color");
 
         std::cout << "Shader program linked successfully.\n";
 
         apex::graphics::Triangle triangle;
+
+        const apex::simulation::TrackSettings track_settings{};
+        apex::graphics::TrackMesh track_mesh{track_settings};
 
         glClearColor(0.04f, 0.12f, 0.14f, 1.0f);
 
         double previous_time = glfwGetTime();
         const apex::simulation::VehicleSettings vehicle_settings{};
         apex::simulation::VehicleState vehicle{};
+
+        vehicle.body.position = {track_settings.centerline_radius, 0.0};
+        vehicle.heading = std::numbers::pi_v<double> / 2.0;
 
         constexpr double physics_step = 1.0 / 120.0;
         constexpr double max_frame_time = 0.25;
@@ -203,6 +214,22 @@ int main() {
             } else {
                 glUniform2f(view_scale_location, 1.0F, aspect);
             }
+
+            glUniform2f(offset_location, 0.0F, 0.0F);
+            glUniform1f(heading_location, 0.0F);
+            glUniform3f(color_location, 0.25F, 0.27F, 0.29F);
+
+            track_mesh.draw();
+
+
+            const bool on_track = apex::simulation::is_on_track(vehicle.body.position, track_settings);
+
+            if (on_track) {
+                glUniform3f(color_location, 0.95F, 0.25F, 0.12F);
+            } else {
+                glUniform3f(color_location, 1.0F, 0.85F, 0.15F);
+            }
+
             glUniform2f(offset_location, static_cast<float>(vehicle.body.position.x),
                         static_cast<float>(vehicle.body.position.y));
 

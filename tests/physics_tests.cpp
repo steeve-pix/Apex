@@ -8,6 +8,8 @@
 #include <numbers>
 #include <array>
 
+#include "simulation/track.hpp"
+
 namespace {
     void expect_near(double actual, double expected, const char *label) {
         constexpr double tolerance = 1e-9;
@@ -107,6 +109,24 @@ namespace {
                 test_case.label
             );
         }
+    }
+
+    void test_track_boundaries() {
+        using apex::simulation::is_on_track;
+        using apex::simulation::TrackSettings;
+
+        const TrackSettings settings{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        expect(is_on_track({5.0, 0.0}, settings), "Centerline must be on track");
+        expect(is_on_track({4.0, 0.0}, settings), "Inner edge must be on track");
+        expect(is_on_track({6.0, 0.0}, settings), "Outer edge must be on track");
+        expect(!is_on_track({3.99, 0.0}, settings), "Inside the inner edge must be off track");
+        expect(!is_on_track({6.01, 0.0}, settings), "Outside the outer edge must be off track");
+        expect(!is_on_track({0.0, 0.0}, settings), "Track center must be off track");
+        expect(is_on_track({-3.0, -4.0}, settings), "Diagonal position must use radial distance");
     }
 }
 
@@ -228,6 +248,7 @@ int main() {
 
         test_lateral_grip();
         test_speed_dependent_steering();
+        test_track_boundaries();
 
         std::cout << "Physics checks passed.\n";
 
