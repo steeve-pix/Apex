@@ -13,9 +13,9 @@ namespace apex::graphics {
 
     Triangle::Triangle() {
         constexpr std::array vertices{
-            Vertex{-0.5F, -0.5F},
-            Vertex{0.5F, -0.5F},
-            Vertex{0.5F, 0.5F},
+            Vertex{0.12F, 0.00F},
+            Vertex{-0.06F, 0.06F},
+            Vertex{-0.06F, -0.06F}
         };
 
         vertex_count_ = static_cast<GLsizei>(vertices.size());
