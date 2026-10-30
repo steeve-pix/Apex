@@ -168,6 +168,9 @@ int main() {
         const auto initial_vehicle = vehicle;
         bool reset_was_pressed = false;
 
+        bool paused = false;
+        bool pause_was_pressed = false;
+
         constexpr double physics_step = 1.0 / 120.0;
         constexpr double max_frame_time = 0.25;
 
@@ -206,20 +209,32 @@ int main() {
 
             reset_was_pressed = reset_pressed;
 
-            const auto controls = read_vehicle_controls(window.get());
+            const bool pause_pressed =
+                    glfwGetKey(window.get(), GLFW_KEY_SPACE) == GLFW_PRESS;
 
-            accumulator +=
-                    std::min(delta_time, max_frame_time);
-
-            while (accumulator >= physics_step) {
-                const auto step_settings =
-                        apex::simulation::vehicle_settings_at(vehicle.body.position, vehicle_settings, track_settings);
-
-                apex::simulation::update_vehicle(vehicle, controls, step_settings, physics_step);
-
-                accumulator -= physics_step;
+            if (pause_pressed && !pause_was_pressed) {
+                paused = !paused;
+                accumulator = 0.0;
+                next_status_update = current_time;
             }
 
+            pause_was_pressed = pause_pressed;
+
+            const auto controls = read_vehicle_controls(window.get());
+
+            if (!paused) {
+                accumulator +=
+                        std::min(delta_time, max_frame_time);
+                while (accumulator >= physics_step) {
+                    const auto step_settings =
+                            apex::simulation::vehicle_settings_at(vehicle.body.position, vehicle_settings,
+                                                                  track_settings);
+
+                    apex::simulation::update_vehicle(vehicle, controls, step_settings, physics_step);
+
+                    accumulator -= physics_step;
+                }
+            }
             if (glfwGetKey(window.get(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
                 glfwSetWindowShouldClose(window.get(), GLFW_TRUE);
             }
@@ -258,7 +273,8 @@ int main() {
 
                 std::ostringstream title;
                 title << "Apex | Speed: " << std::fixed << std::setprecision(2)
-                        << speed << " units/s | " << (on_track ? "On track" : "Off track");
+                        << speed << " units/s | " << (on_track ? "On track" : "Off track")
+                        << (paused ? " | Paused" : " | Running");
 
                 const auto title_text = title.str();
                 glfwSetWindowTitle(window.get(), title_text.c_str());
