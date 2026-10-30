@@ -163,6 +163,9 @@ int main() {
         vehicle.body.position = {track_settings.centerline_radius, 0.0};
         vehicle.heading = std::numbers::pi_v<double> / 2.0;
 
+        const auto initial_vehicle = vehicle;
+        bool reset_was_pressed = false;
+
         constexpr double physics_step = 1.0 / 120.0;
         constexpr double max_frame_time = 0.25;
 
@@ -187,6 +190,16 @@ int main() {
                 previous_time = glfwGetTime();
                 continue;
             }
+
+            const bool reset_pressed =
+                    glfwGetKey(window.get(), GLFW_KEY_R) == GLFW_PRESS;
+
+            if (reset_pressed && !reset_was_pressed) {
+                vehicle = initial_vehicle;
+                accumulator = 0.0;
+            }
+
+            reset_was_pressed = reset_pressed;
 
             const auto controls = read_vehicle_controls(window.get());
 
