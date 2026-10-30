@@ -33,7 +33,15 @@ glad_add_library(apex_glad STATIC
         EXTENSIONS NONE
 )
 
-add_executable(apex src/main.cpp)
+add_executable(apex src/main.cpp
+        src/platform/glfw_session.cpp
+        src/graphics/shader.cpp
+        src/graphics/shader_program.cpp
+        src/graphics/triangle.cpp
+)
+
+target_include_directories(apex PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(apex PRIVATE glfw apex_glad)
 
 target_compile_features(apex PRIVATE cxx_std_20)
