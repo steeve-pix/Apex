@@ -16,4 +16,15 @@ namespace apex::simulation {
         return distance >= inner_radius &&
                distance <= outer_radius;
     }
+
+    VehicleSettings vehicle_settings_at(const math::Vec2 &position, const VehicleSettings &base_settings,
+                                        const TrackSettings &track) {
+        auto settings = base_settings;
+
+        if (!is_on_track(position, track)) {
+            settings.motion.linear_drag += track.off_road_drag;
+        }
+
+        return settings;
+    }
 }
