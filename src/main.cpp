@@ -7,7 +7,9 @@
 #include <stdexcept>
 #include <memory>
 #include <algorithm>
+#include <iomanip>
 #include <numbers>
+#include <sstream>
 
 #include "platform/glfw_session.hpp"
 #include "graphics/shader.hpp"
@@ -171,6 +173,9 @@ int main() {
 
         double accumulator{};
 
+        constexpr double status_update_interval = 0.1;
+        double next_status_update = 0.0;
+
         while (glfwWindowShouldClose(window.get()) == GLFW_FALSE) {
             const double current_time = glfwGetTime();
             const double delta_time = current_time - previous_time;
@@ -245,6 +250,20 @@ int main() {
                 glUniform3f(color_location, 0.95F, 0.25F, 0.12F);
             } else {
                 glUniform3f(color_location, 1.0F, 0.85F, 0.15F);
+            }
+
+            if (current_time >= next_status_update) {
+                const auto &velocity = vehicle.body.velocity;
+                const double speed = std::hypot(velocity.x, velocity.y);
+
+                std::ostringstream title;
+                title << "Apex | Speed: " << std::fixed << std::setprecision(2)
+                        << speed << " units/s | " << (on_track ? "On track" : "Off track");
+
+                const auto title_text = title.str();
+                glfwSetWindowTitle(window.get(), title_text.c_str());
+
+                next_status_update = current_time + status_update_interval;
             }
 
             glUniform2f(offset_location, static_cast<float>(vehicle.body.position.x),
