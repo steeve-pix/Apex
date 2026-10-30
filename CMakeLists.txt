@@ -56,6 +56,9 @@ target_link_libraries(apex PRIVATE glfw apex_glad apex_simulation)
 
 target_compile_features(apex PRIVATE cxx_std_20)
 
+add_executable(apex_headless src/headless_main.cpp)
+target_link_libraries(apex_headless PRIVATE apex_simulation)
+
 set_target_properties(apex PROPERTIES CXX_EXTENSIONS OFF)
 
 if (APPLE)
