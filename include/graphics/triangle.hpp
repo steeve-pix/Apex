@@ -1,8 +1,6 @@
 #pragma once
 #include <glad/gl.h>
 
-#include <array>
-
 namespace apex::graphics {
     class Triangle {
     public:
