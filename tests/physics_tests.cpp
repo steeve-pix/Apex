@@ -9,6 +9,7 @@
 #include <array>
 
 #include "simulation/track.hpp"
+#include "simulation/world.hpp"
 
 namespace {
     void expect_near(double actual, double expected, const char *label) {
@@ -127,6 +128,34 @@ namespace {
         expect(!is_on_track({6.01, 0.0}, settings), "Outside the outer edge must be off track");
         expect(!is_on_track({0.0, 0.0}, settings), "Track center must be off track");
         expect(is_on_track({-3.0, -4.0}, settings), "Diagonal position must use radial distance");
+    }
+
+    void test_world() {
+        apex::simulation::WorldSetting settings{};
+        settings.track.centerline_radius = 5.0;
+        settings.track.road_width = 2.0;
+        settings.vehicle.motion.acceleration_strength = 2.0;
+        settings.vehicle.motion.linear_drag = 0.0;
+
+        auto world = apex::simulation::make_initial_world(settings);
+        expect_near(world.vehicle.body.position.x, 5.0, "World spawn x");
+        expect_near(world.vehicle.body.position.y, 0.0, "World spawn y");
+        expect_near(world.vehicle.heading, std::numbers::pi_v<double> / 2.0,
+                    "World spawn heading");
+        expect_near(world.elapsed_time, 0.0, "Initial simulation time");
+
+        const apex::simulation::VehicleControls controls{.throttle = 1.0};
+        apex::simulation::step_world(world, controls, settings, 0.25);
+        expect_near(world.elapsed_time, 0.25, "World step advances time");
+        expect_near(world.vehicle.body.position.y, 0.0625, "World step advances position");
+        expect_near(world.vehicle.body.velocity.y, 0.5, "World step advances velocity");
+
+        world = apex::simulation::make_initial_world(settings);
+        expect_near(world.vehicle.body.position.x, 5.0, "Reset spawn x");
+        expect_near(world.vehicle.body.position.y, 0.0, "Reset spawn y");
+        expect_near(world.vehicle.body.velocity.x, 0.0, "Reset velocity x");
+        expect_near(world.vehicle.body.velocity.y, 0.0, "Reset velocity y");
+        expect_near(world.elapsed_time, 0.0, "Reset simulation time");
     }
 
     void test_surface_drag() {
@@ -285,6 +314,7 @@ int main() {
         test_speed_dependent_steering();
         test_track_boundaries();
         test_surface_drag();
+        test_world();
 
         std::cout << "Physics checks passed.\n";
 
