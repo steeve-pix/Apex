@@ -34,7 +34,8 @@ glad_add_library(apex_glad STATIC
 )
 add_library(apex_simulation STATIC
         src/simulation/body.cpp
-        src/simulation/vehicle.cpp)
+        src/simulation/vehicle.cpp
+        src/simulation/track.cpp)
 
 target_include_directories(apex_simulation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -45,6 +46,7 @@ add_executable(apex src/main.cpp
         src/graphics/shader.cpp
         src/graphics/shader_program.cpp
         src/graphics/triangle.cpp
+        src/graphics/track_mesh.cpp
 )
 
 target_include_directories(apex PRIVATE
