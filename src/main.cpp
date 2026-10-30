@@ -7,11 +7,13 @@
 #include <stdexcept>
 #include <memory>
 #include <cmath>
+#include <algorithm>
 #include "platform/glfw_session.hpp"
 #include "graphics/shader.hpp"
 #include "graphics/shader_program.hpp"
 #include "graphics/triangle.hpp"
 #include "math/vec2.hpp"
+#include "simulation/body.hpp"
 
 namespace {
     constexpr int window_width = 1200;
@@ -141,8 +143,13 @@ int main() {
         glClearColor(0.04f, 0.12f, 0.14f, 1.0f);
 
         double previous_time = glfwGetTime();
-        constexpr double movement_speed = 0.75;
-        apex::math::Vec2 position{};
+        constexpr apex::simulation::MotionSettings motion_settings{};
+        apex::simulation::Body2D body{};
+
+        constexpr double physics_step = 1.0 / 120.0;
+        constexpr double max_frame_time = 0.25;
+
+        double accumulator{};
 
         while (glfwWindowShouldClose(window.get()) == GLFW_FALSE) {
             const double current_time = glfwGetTime();
@@ -165,19 +172,20 @@ int main() {
             }
 
             const auto direction = read_movement_direction(window.get());
+
+            accumulator +=
+                std::min(delta_time, max_frame_time);
+
+            while (accumulator >= physics_step) {
+                apex::simulation::update_body(body, direction, motion_settings, physics_step);
+
+                accumulator -= physics_step;
+            }
             if (glfwGetKey(window.get(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
                 glfwSetWindowShouldClose(window.get(), GLFW_TRUE);
             }
 
-            position.x +=
-                    direction.x * movement_speed * delta_time;
-
-            position.y +=
-                    direction.y * movement_speed * delta_time;
-
             glClear(GL_COLOR_BUFFER_BIT);
-
-            report_elapsed += delta_time;
 
             program.use();
 
@@ -189,7 +197,7 @@ int main() {
             } else {
                 glUniform2f(view_scale_location, 1.0F, aspect);
             }
-            glUniform2f(offset_location, static_cast<float>(position.x), static_cast<float>(position.y));
+            glUniform2f(offset_location, static_cast<float>(body.position.x), static_cast<float>(body.position.y));
 
             triangle.draw();
 
