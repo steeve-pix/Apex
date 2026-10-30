@@ -14,7 +14,8 @@ namespace apex::simulation {
 
     struct VehicleSettings {
         MotionSettings motion{};
-        double turn_rate{2.0};
+        double wheelbase{0.2};
+        double max_steering_angle{0.45};
         double lateral_grip{8.0};
     };
 
