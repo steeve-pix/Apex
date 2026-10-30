@@ -15,6 +15,7 @@ namespace apex::graphics {
 
         void link(const Shader& vertex, const Shader& fragment) const;
         void use() const;
+        [[nodiscard]] GLint uniform_location(const char* name) const;
 
     private:
         GLuint id_;
