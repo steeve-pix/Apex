@@ -19,5 +19,19 @@ namespace apex::simulation {
         };
 
         update_body(vehicle.body, thrust_direction, settings.motion, dt);
+
+        const math::Vec2 sideways{-forward.y, forward.x};
+
+        auto &velocity = vehicle.body.velocity;
+
+        const double lateral_speed = velocity.x * sideways.x + velocity.y * sideways.y;
+        const double retrained_fraction =
+                std::exp(-settings.lateral_grip * dt);
+
+        const double correction =
+                lateral_speed * (1.0 - retrained_fraction);
+
+        velocity.x -= sideways.x * correction;
+        velocity.y -= sideways.y * correction;
     }
 }

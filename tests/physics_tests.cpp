@@ -22,6 +22,41 @@ namespace {
             throw std::runtime_error(message);
         }
     }
+
+    void test_lateral_grip() {
+        using apex::math::Vec2;
+        using apex::simulation::VehicleControls;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::VehicleState;
+        using apex::simulation::update_vehicle;
+
+        VehicleSettings settings{};
+        settings.motion.acceleration_strength = 0.0;
+        settings.motion.linear_drag = 0.0;
+        settings.lateral_grip = 8.0;
+
+        VehicleState initial{};
+        initial.heading = std::numbers::pi_v<double> / 2.0;
+        initial.body.velocity = Vec2{-1.0, 3.0};
+
+        constexpr double dt = 1.0 / 120.0;
+        const VehicleControls no_input{};
+
+        auto gripping = initial;
+
+        update_vehicle(gripping, no_input, settings, dt);
+        expect(gripping.body.velocity.x > -1.0 && gripping.body.velocity.x < 0.0,
+               "Grip must reduce sideways speed without reversing it");
+        expect_near(gripping.body.velocity.y, 3.0, "Grip must preserve forward velocity");
+
+        // Disabling grip must preserve both velocity components.
+        auto grip_disabled = initial;
+        settings.lateral_grip = 0.0;
+
+        update_vehicle(grip_disabled, no_input, settings, dt);
+        expect_near(grip_disabled.body.velocity.x, -1.0, "Zero-grip sideways velocity");
+        expect_near(grip_disabled.body.velocity.y, 3.0, "Zero-grip forward velocity");
+    }
 }
 
 int main() {
@@ -134,6 +169,8 @@ int main() {
         expect_near(accelerating.body.velocity.y, 1.0, "Forward velocity y");
         expect_near(accelerating.body.position.x, 0.0, "Forward position x");
         expect_near(accelerating.body.position.y, 0.25, "Forward position y");
+
+        test_lateral_grip();
 
         std::cout << "Physics checks passed.\n";
 
