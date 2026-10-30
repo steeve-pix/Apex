@@ -15,7 +15,7 @@ namespace apex::graphics {
         glDeleteProgram(id_);
     }
 
-    void ShaderProgram::link(const Shader& vertex, const Shader& fragment) const {
+    void ShaderProgram::link(const Shader &vertex, const Shader &fragment) const {
         glAttachShader(id_, vertex.get());
         glAttachShader(id_, fragment.get());
 
@@ -46,5 +46,15 @@ namespace apex::graphics {
 
     void ShaderProgram::use() const {
         glUseProgram(id_);
+    }
+
+    GLint ShaderProgram::uniform_location(const char *name) const {
+        const GLint location = glGetUniformLocation(id_, name);
+
+        if (location == -1) {
+            throw std::runtime_error(std::string("Uniform not found: ") + name);
+        }
+
+        return location;
     }
 }
