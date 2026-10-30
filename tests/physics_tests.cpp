@@ -128,6 +128,41 @@ namespace {
         expect(!is_on_track({0.0, 0.0}, settings), "Track center must be off track");
         expect(is_on_track({-3.0, -4.0}, settings), "Diagonal position must use radial distance");
     }
+
+    void test_surface_drag() {
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::vehicle_settings_at;
+
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0,
+            .off_road_drag = 4.0
+        };
+
+        VehicleSettings base{};
+        base.motion.linear_drag = 1.5;
+
+        const auto road = vehicle_settings_at({5.0, 0.0}, base, track);
+        const auto infield = vehicle_settings_at({0.0, 0.0}, base, track);
+        const auto outside = vehicle_settings_at({7.0, 0.0}, base, track);
+        const auto returned = vehicle_settings_at({5.0, 0.0}, base, track);
+
+        expect_near(road.motion.linear_drag, 1.5,
+                    "Road must preserve normal drag");
+        expect_near(infield.motion.linear_drag, 5.5,
+                    "Infield must add surface drag");
+        expect_near(outside.motion.linear_drag, 5.5,
+                    "Outside must add surface drag");
+        expect_near(returned.motion.linear_drag, 1.5,
+                    "Returning to road must restore normal drag");
+        expect_near(base.motion.linear_drag, 1.5,
+                    "Surface selection must not modify base settings");
+
+        expect_near(outside.motion.acceleration_strength,
+                    base.motion.acceleration_strength,
+                    "Surface drag must preserve engine acceleration");
+    }
 }
 
 int main() {
@@ -249,6 +284,7 @@ int main() {
         test_lateral_grip();
         test_speed_dependent_steering();
         test_track_boundaries();
+        test_surface_drag();
 
         std::cout << "Physics checks passed.\n";
 

@@ -207,10 +207,14 @@ int main() {
                     std::min(delta_time, max_frame_time);
 
             while (accumulator >= physics_step) {
-                apex::simulation::update_vehicle(vehicle, controls, vehicle_settings, physics_step);
+                const auto step_settings =
+                        apex::simulation::vehicle_settings_at(vehicle.body.position, vehicle_settings, track_settings);
+
+                apex::simulation::update_vehicle(vehicle, controls, step_settings, physics_step);
 
                 accumulator -= physics_step;
             }
+
             if (glfwGetKey(window.get(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
                 glfwSetWindowShouldClose(window.get(), GLFW_TRUE);
             }
