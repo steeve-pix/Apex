@@ -7,8 +7,8 @@
 #include <stdexcept>
 #include <memory>
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
-#include <numbers>
 #include <sstream>
 
 #include "platform/glfw_session.hpp"
@@ -18,6 +18,7 @@
 #include "graphics/triangle.hpp"
 #include "simulation/track.hpp"
 #include "simulation/vehicle.hpp"
+#include "simulation/world.hpp"
 
 namespace {
     constexpr int window_width = 1200;
@@ -153,19 +154,13 @@ int main() {
 
         apex::graphics::Triangle triangle;
 
-        const apex::simulation::TrackSettings track_settings{};
-        apex::graphics::TrackMesh track_mesh{track_settings};
+        const apex::simulation::WorldSetting world_settings{};
+        apex::graphics::TrackMesh track_mesh{world_settings.track};
 
         glClearColor(0.04f, 0.12f, 0.14f, 1.0f);
 
         double previous_time = glfwGetTime();
-        const apex::simulation::VehicleSettings vehicle_settings{};
-        apex::simulation::VehicleState vehicle{};
-
-        vehicle.body.position = {track_settings.centerline_radius, 0.0};
-        vehicle.heading = std::numbers::pi_v<double> / 2.0;
-
-        const auto initial_vehicle = vehicle;
+        auto world = apex::simulation::make_initial_world(world_settings);
         bool reset_was_pressed = false;
 
         bool paused = false;
@@ -203,7 +198,7 @@ int main() {
                     glfwGetKey(window.get(), GLFW_KEY_R) == GLFW_PRESS;
 
             if (reset_pressed && !reset_was_pressed) {
-                vehicle = initial_vehicle;
+                world = apex::simulation::make_initial_world(world_settings);
                 accumulator = 0.0;
             }
 
@@ -226,11 +221,7 @@ int main() {
                 accumulator +=
                         std::min(delta_time, max_frame_time);
                 while (accumulator >= physics_step) {
-                    const auto step_settings =
-                            apex::simulation::vehicle_settings_at(vehicle.body.position, vehicle_settings,
-                                                                  track_settings);
-
-                    apex::simulation::update_vehicle(vehicle, controls, step_settings, physics_step);
+                    apex::simulation::step_world(world, controls, world_settings, physics_step);
 
                     accumulator -= physics_step;
                 }
@@ -259,7 +250,8 @@ int main() {
             track_mesh.draw();
 
 
-            const bool on_track = apex::simulation::is_on_track(vehicle.body.position, track_settings);
+            const bool on_track = apex::simulation::is_on_track(
+                world.vehicle.body.position, world_settings.track);
 
             if (on_track) {
                 glUniform3f(color_location, 0.95F, 0.25F, 0.12F);
@@ -268,7 +260,7 @@ int main() {
             }
 
             if (current_time >= next_status_update) {
-                const auto &velocity = vehicle.body.velocity;
+                const auto &velocity = world.vehicle.body.velocity;
                 const double speed = std::hypot(velocity.x, velocity.y);
 
                 std::ostringstream title;
@@ -282,10 +274,10 @@ int main() {
                 next_status_update = current_time + status_update_interval;
             }
 
-            glUniform2f(offset_location, static_cast<float>(vehicle.body.position.x),
-                        static_cast<float>(vehicle.body.position.y));
+            glUniform2f(offset_location, static_cast<float>(world.vehicle.body.position.x),
+                        static_cast<float>(world.vehicle.body.position.y));
 
-            glUniform1f(heading_location, static_cast<float>(vehicle.heading));
+            glUniform1f(heading_location, static_cast<float>(world.vehicle.heading));
 
             triangle.draw();
 
