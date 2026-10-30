@@ -15,9 +15,9 @@ namespace apex::simulation {
     struct VehicleSettings {
         MotionSettings motion{};
         double turn_rate{2.0};
+        double lateral_grip{8.0};
     };
 
     void update_vehicle(VehicleState &vehicle, const VehicleControls &controls, const VehicleSettings &settings,
                         double dt);
-
 }
