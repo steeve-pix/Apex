@@ -1,7 +1,7 @@
 #include "graphics/triangle.hpp"
 
-
-#include "glad/gl.h"
+#include <array>
+#include <stdexcept>
 
 namespace apex::graphics {
     namespace {
