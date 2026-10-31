@@ -1,6 +1,8 @@
 #include "simulation/track.hpp"
 
 #include <cmath>
+#include <numbers>
+#include <stdexcept>
 
 namespace apex::simulation {
     bool is_on_track(
@@ -26,5 +28,27 @@ namespace apex::simulation {
         }
 
         return settings;
+    }
+
+    TrackObservation observe_track(const VehicleState &vehicle, const TrackSettings &track) {
+        const auto &body = vehicle.body;
+        const double radius =
+                std::hypot(body.position.x, body.position.y);
+
+        if (radius == 0.0) {
+            throw std::invalid_argument("Track heading is undefined at the origin");
+        }
+        constexpr double pi = std::numbers::pi_v<double>;
+
+        const double radial_angle =
+                std::atan2(body.position.y, body.position.x);
+
+        const double desired_heading = radial_angle + pi / 2.0;
+        return TrackObservation{
+            .centerline_error = radius - track.centerline_radius,
+            .heading_error = std::remainder(desired_heading - vehicle.heading, 2.0 * pi),
+            .forward_speed = body.velocity.x * std::cos(vehicle.heading) + body.velocity.y * std::sin(
+                                 vehicle.heading)
+        };
     }
 }

@@ -192,6 +192,66 @@ namespace {
                     base.motion.acceleration_strength,
                     "Surface drag must preserve engine acceleration");
     }
+
+    void test_track_observation() {
+        using apex::simulation::observe_track;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleState;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{.centerline_radius = 5.0};
+
+        VehicleState vehicle{};
+        vehicle.heading = pi / 2.0;
+
+        vehicle.body.position = {5.0, 0.0};
+        auto observation = observe_track(vehicle, track);
+
+        expect_near(observation.centerline_error, 0.0,
+                    "Centerline error at road center");
+        expect_near(observation.heading_error, 0.0,
+                    "Counterclockwise tangent alignment");
+
+        vehicle.body.position = {6.0, 0.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.centerline_error, 1.0,
+                    "Outside error must be positive");
+
+        vehicle.body.position = {4.0, 0.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.centerline_error, -1.0,
+                    "Inside error must be negative");
+
+        vehicle.body.position = {5.0, 0.0};
+        vehicle.heading = 0.0;
+        observation = observe_track(vehicle, track);
+        expect_near(observation.heading_error, pi / 2.0,
+                    "Desired left turn must be positive");
+
+        vehicle.body.position = {0.0, 5.0};
+        vehicle.heading = -pi + 0.1;
+        observation = observe_track(vehicle, track);
+        expect_near(observation.heading_error, -0.1,
+                    "Heading error must wrap across pi");
+
+        vehicle.heading = pi / 2.0;
+        vehicle.body.velocity = {9.0, -2.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.forward_speed, -2.0,
+                    "Forward speed must exclude sideways velocity");
+
+        vehicle.body.position = {0.0, 0.0};
+        bool rejected_origin = false;
+
+        try {
+            const auto unused = observe_track(vehicle, track);
+            (void) unused;
+        } catch (const std::invalid_argument &) {
+            rejected_origin = true;
+        }
+
+        expect(rejected_origin, "Observation must reject undefined heading at origin");
+    }
 }
 
 int main() {
@@ -315,6 +375,7 @@ int main() {
         test_track_boundaries();
         test_surface_drag();
         test_world();
+        test_track_observation();
 
         std::cout << "Physics checks passed.\n";
 
