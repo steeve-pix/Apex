@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "simulation/driver.hpp"
+
 namespace {
     void write_sample(std::ostream &output, const apex::simulation::WorldState &world,
                       const apex::simulation::TrackSettings &track) {
@@ -36,8 +38,10 @@ namespace {
 
 int main(int argc, char *argv[]) {
     try {
-        if (argc != 1 && argc != 3) {
-            throw std::invalid_argument("Usage: apex_headless [throttle steering]");
+        const bool automatic =
+                argc == 2 && std::string{argv[1]} == "--auto";
+        if (!automatic && argc != 1 && argc != 3) {
+            throw std::invalid_argument("Usage: apex_headless [throttle steering] | --auto");
         }
         const apex::simulation::WorldSetting settings{};
         auto world = apex::simulation::make_initial_world(settings);
@@ -52,6 +56,8 @@ int main(int argc, char *argv[]) {
             .throttle = 1.0
         };
 
+        const apex::simulation::DriverSettings driver_settings{};
+
         if (argc == 3) {
             controls.throttle = parse_control(argv[1]);
             controls.steering = parse_control(argv[2]);
@@ -63,6 +69,13 @@ int main(int argc, char *argv[]) {
         write_sample(std::cout, world, settings.track);
 
         for (int step = 0; step < step_count; ++step) {
+            if (automatic) {
+                const auto observation = apex::simulation::observe_track(
+                    world.vehicle, settings.track);
+
+                controls = apex::simulation::drive_automatically(
+                    observation, settings.vehicle, settings.track, driver_settings);
+            }
             apex::simulation::step_world(world, controls, settings, dt);
             write_sample(std::cout, world, settings.track);
         }
