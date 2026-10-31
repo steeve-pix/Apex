@@ -6,6 +6,8 @@
 #include <iostream>
 #include <iomanip>
 #include <limits>
+#include <stdexcept>
+#include <string>
 
 namespace {
     void write_sample(std::ostream &output, const apex::simulation::WorldState &world,
@@ -16,10 +18,27 @@ namespace {
                 ',' << body.velocity.y << ',' << world.vehicle.heading << ',' << (
                     apex::simulation::is_on_track(body.position, track) ? 1 : 0) << '\n';
     }
+
+    double parse_control(const char *argument) {
+        const std::string text{argument};
+        std::size_t parsed{};
+        const double value = std::stod(text, &parsed);
+
+        if (parsed != text.size() ||
+            !std::isfinite(value) ||
+            value < -1.0 || value > 1.0) {
+            throw std::invalid_argument("Controls must be finite numbers between -1 and 1");
+        }
+
+        return value;
+    }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     try {
+        if (argc != 1 && argc != 3) {
+            throw std::invalid_argument("Usage: apex_headless [throttle steering]");
+        }
         const apex::simulation::WorldSetting settings{};
         auto world = apex::simulation::make_initial_world(settings);
 
@@ -29,9 +48,14 @@ int main() {
                 steps_per_second * duration_seconds;
         constexpr double dt = 1.0 / steps_per_second;
 
-        const apex::simulation::VehicleControls controls{
+        apex::simulation::VehicleControls controls{
             .throttle = 1.0
         };
+
+        if (argc == 3) {
+            controls.throttle = parse_control(argv[1]);
+            controls.steering = parse_control(argv[2]);
+        }
 
         std::cout << std::setprecision(std::numeric_limits<double>::max_digits10);
 
