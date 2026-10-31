@@ -8,6 +8,7 @@
 #include <numbers>
 #include <array>
 
+#include "simulation/driver.hpp"
 #include "simulation/track.hpp"
 #include "simulation/world.hpp"
 
@@ -252,6 +253,58 @@ namespace {
 
         expect(rejected_origin, "Observation must reject undefined heading at origin");
     }
+
+    void test_automatic_driver() {
+        using apex::simulation::drive_automatically;
+        using apex::simulation::DriverSettings;
+        using apex::simulation::TrackObservation;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleSettings;
+
+        const VehicleSettings vehicle{};
+        const TrackSettings track{};
+        const DriverSettings driver{};
+
+        const auto controls_for = [&](const TrackObservation &observation) {
+            return drive_automatically(observation, vehicle, track, driver);
+        };
+
+        const auto centered = controls_for(TrackObservation{});
+
+        expect(centered.steering > 0.0 && centered.steering < 1.0,
+               "Circular track must require left steering");
+        expect_near(centered.throttle, 1.0,
+                    "Initial throttle must clamp to full power");
+
+        const auto outside = controls_for(
+            TrackObservation{.centerline_error = 0.02}
+        );
+        const auto inside = controls_for(
+            TrackObservation{.centerline_error = -0.02}
+        );
+
+        expect(outside.steering > centered.steering,
+               "Outside position must increase left steering");
+        expect(inside.steering < centered.steering,
+               "Inside position must reduce left steering");
+
+        const auto left = controls_for(
+            TrackObservation{.heading_error = 10.0}
+        );
+        const auto right = controls_for(
+            TrackObservation{.heading_error = -10.0}
+        );
+
+        expect_near(left.steering, 1.0, "Left steering limit");
+        expect_near(right.steering, -1.0, "Right steering limit");
+
+        const auto fast = controls_for(
+            TrackObservation{.forward_speed = driver.target_speed + 0.1}
+        );
+
+        expect_near(fast.throttle, 0.0,
+                    "Above target speed must release throttle");
+    }
 }
 
 int main() {
@@ -376,6 +429,7 @@ int main() {
         test_surface_drag();
         test_world();
         test_track_observation();
+        test_automatic_driver();
 
         std::cout << "Physics checks passed.\n";
 
