@@ -19,4 +19,12 @@ namespace apex::simulation {
         const VehicleSettings &base_settings,
         const TrackSettings &track
     );
+
+    struct TrackObservation {
+        double centerline_error{};
+        double heading_error{};
+        double forward_speed{};
+    };
+
+    [[nodiscard]] TrackObservation observe_track(const VehicleState &vehicle, const TrackSettings &track);
 }
