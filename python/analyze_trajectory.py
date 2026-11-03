@@ -3,6 +3,8 @@ import csv
 import math
 from pathlib import Path
 
+SENSOR_COUNT = 5
+
 
 def load_trajectory(path: Path) -> list[dict[str, float]]:
     required = {"time", "x", "y", "vx", "vy", "heading", "on_track"}
@@ -13,11 +15,26 @@ def load_trajectory(path: Path) -> list[dict[str, float]]:
         if not required.issubset(reader.fieldnames or []):
             raise ValueError("CSV is missing required trajectory columns")
 
+        sensor_columns = {
+            f"sensor_{index}_{field}"
+            for index in range(SENSOR_COUNT)
+            for field in ("distance", "hit")
+        }
+
+        present_sensor_columns = {
+            name for name in reader.fieldnames if name.startswith("sensor_")
+        }
+
+        if present_sensor_columns and present_sensor_columns != sensor_columns:
+            raise ValueError("CSV must contain all five sensor distance/hit pairs")
+
+        columns = required | present_sensor_columns
+
         samples = []
 
         for line_number, row in enumerate(reader, start=2):
             try:
-                sample = {name: float(row[name]) for name in required}
+                sample = {name: float(row[name]) for name in columns}
             except (TypeError, ValueError) as e:
                 raise ValueError(f"Invalid numeric data on line {line_number}") from e
 
@@ -25,6 +42,17 @@ def load_trajectory(path: Path) -> list[dict[str, float]]:
                 raise ValueError(f"Non-finite data on line {line_number}")
             if sample["on_track"] not in (0.0, 1.0):
                 raise ValueError(f"Invalid track status on line {line_number}")
+            if present_sensor_columns:
+                for index in range(SENSOR_COUNT):
+                    distance = sample[f"sensor_{index}_distance"]
+                    hit = sample[f"sensor_{index}_hit"]
+
+                    if distance < 0.0:
+                        raise ValueError(f"Negative distance on line {line_number}")
+
+                    if hit not in (0.0, 1.0):
+                        raise ValueError(f"Invalid sensor hit flag on line {line_number}")
+
             if samples and sample["time"] <= samples[-1]["time"]:
                 raise ValueError("Sample timestamps must increase")
 
