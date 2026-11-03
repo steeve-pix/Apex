@@ -347,6 +347,55 @@ namespace {
             expect_near(reading.distance, test_case.expected_distance, test_case.label);
         }
     }
+
+    void test_sensor_fan() {
+        using apex::simulation::sense_track;
+        using apex::simulation::SensorSettings;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleState;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        SensorSettings sensors{};
+        sensors.max_distance = 10.0;
+
+        VehicleState vehicle{};
+        vehicle.body.position = {5.0, 0.0};
+        vehicle.heading = pi / 2.0;
+
+        const auto initial = sense_track(vehicle, track, sensors);
+
+        expect(initial[0].hit && initial[2].hit && initial[4].hit,
+               "Right, forward, and left sensors must hit");
+        expect_near(initial[0].distance, 1.0, "Right sensor");
+        expect_near(initial[2].distance, std::sqrt(11.0), "Forward sensor");
+        expect_near(initial[4].distance, 1.0, "Left sensor");
+
+        // Rotate both position and heading by a quarter turn.
+        vehicle.body.position = {0.0, 5.0};
+        vehicle.heading = pi;
+
+        const auto rotated = sense_track(vehicle, track, sensors);
+
+        for (std::size_t i = 0; i < rotated.size(); ++i) {
+            expect(rotated[i].hit == initial[i].hit,
+                   "Rotation must preserve sensor hit status");
+            expect_near(rotated[i].distance, initial[i].distance,
+                        "Rotation must preserve sensor distance");
+        }
+
+        sensors.max_distance = 0.25;
+        const auto limited = sense_track(vehicle, track, sensors);
+
+        for (const auto &reading: limited) {
+            expect(!reading.hit, "Short-range sensor must not reach an edge");
+            expect_near(reading.distance, 0.25, "Sensor range limit");
+        }
+    }
 }
 
 int main() {
@@ -473,6 +522,7 @@ int main() {
         test_track_observation();
         test_automatic_driver();
         test_track_rays();
+        test_sensor_fan();
 
         std::cout << "Physics checks passed.\n";
 

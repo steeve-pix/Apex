@@ -38,7 +38,8 @@ add_library(apex_simulation STATIC
         src/simulation/track.cpp
         src/simulation/world.cpp
         src/simulation/driver.cpp
-        src/simulation/sensors.cpp)
+        src/simulation/sensors.cpp
+)
 
 target_include_directories(apex_simulation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -50,6 +51,7 @@ add_executable(apex src/main.cpp
         src/graphics/shader_program.cpp
         src/graphics/triangle.cpp
         src/graphics/track_mesh.cpp
+        src/graphics/sensor_lines.cpp
 )
 
 target_include_directories(apex PRIVATE

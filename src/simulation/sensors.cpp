@@ -55,4 +55,17 @@ namespace apex::simulation {
 
         return reading;
     }
+
+    SensorReadings sense_track(const VehicleState &vehicle, const TrackSettings &track, const SensorSettings &sensors) {
+        SensorReadings reading{};
+
+        for (std::size_t i = 0; i < reading.size(); ++i) {
+            const double angle =
+                    vehicle.heading + sensors.angle_offset[i];
+
+            reading[i] = cast_track_ray(vehicle.body.position, angle, track, sensors.max_distance);
+        }
+
+        return reading;
+    }
 }
