@@ -1,4 +1,5 @@
 #include "simulation/world.hpp"
+#include "simulation/driver.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -8,8 +9,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
-
-#include "simulation/driver.hpp"
 
 namespace {
     void write_sample(std::ostream &output, const apex::simulation::WorldState &world,

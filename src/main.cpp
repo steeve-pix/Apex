@@ -16,6 +16,7 @@
 #include "graphics/shader_program.hpp"
 #include "graphics/track_mesh.hpp"
 #include "graphics/triangle.hpp"
+#include "simulation/driver.hpp"
 #include "simulation/track.hpp"
 #include "simulation/vehicle.hpp"
 #include "simulation/world.hpp"
@@ -161,6 +162,9 @@ int main() {
 
         double previous_time = glfwGetTime();
         auto world = apex::simulation::make_initial_world(world_settings);
+        const apex::simulation::DriverSettings driver_settings{};
+        bool automatic = false;
+        bool autopilot_was_pressed = false;
         bool reset_was_pressed = false;
 
         bool paused = false;
@@ -199,6 +203,7 @@ int main() {
 
             if (reset_pressed && !reset_was_pressed) {
                 world = apex::simulation::make_initial_world(world_settings);
+
                 accumulator = 0.0;
             }
 
@@ -215,12 +220,31 @@ int main() {
 
             pause_was_pressed = pause_pressed;
 
-            const auto controls = read_vehicle_controls(window.get());
+            const bool autopilot_pressed =
+                    glfwGetKey(window.get(),GLFW_KEY_P) == GLFW_PRESS;
+
+            if (autopilot_pressed && !autopilot_was_pressed) {
+                automatic = !automatic;
+                next_status_update = current_time;
+            }
+
+            autopilot_was_pressed = autopilot_pressed;
+
+            const auto manual_controls = read_vehicle_controls(window.get());
 
             if (!paused) {
                 accumulator +=
                         std::min(delta_time, max_frame_time);
                 while (accumulator >= physics_step) {
+                    auto controls = manual_controls;
+
+                    if (automatic) {
+                        const auto observation = apex::simulation::observe_track(world.vehicle, world_settings.track);
+
+                        controls = apex::simulation::drive_automatically(
+                            observation, world_settings.vehicle, world_settings.track, driver_settings);
+                    }
+
                     apex::simulation::step_world(world, controls, world_settings, physics_step);
 
                     accumulator -= physics_step;
@@ -266,7 +290,8 @@ int main() {
                 std::ostringstream title;
                 title << "Apex | Speed: " << std::fixed << std::setprecision(2)
                         << speed << " units/s | " << (on_track ? "On track" : "Off track")
-                        << (paused ? " | Paused" : " | Running");
+                        << (paused ? " | Paused" : " | Running")
+                        << (automatic ? " | Auto" : " | Manual");
 
                 const auto title_text = title.str();
                 glfwSetWindowTitle(window.get(), title_text.c_str());
