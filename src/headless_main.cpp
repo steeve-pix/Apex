@@ -14,7 +14,8 @@
 
 namespace {
     void write_sample(std::ostream &output, const apex::simulation::WorldState &world,
-                      const apex::simulation::TrackSettings &track, const apex::simulation::SensorSettings &sensors) {
+                      const apex::simulation::TrackSettings &track, const apex::simulation::SensorSettings &sensors,
+                      const apex::simulation::VehicleControls &controls) {
         const auto &body = world.vehicle.body;
         const auto readings = apex::simulation::sense_track(
             world.vehicle, track, sensors
@@ -27,6 +28,10 @@ namespace {
                 << body.velocity.y << ','
                 << world.vehicle.heading << ','
                 << (apex::simulation::is_on_track(body.position, track) ? 1 : 0);
+
+
+        output << "," << controls.throttle
+                << "," << controls.steering;
 
         for (const auto &reading: readings) {
             output << ',' << reading.distance
@@ -81,7 +86,7 @@ int main(int argc, char *argv[]) {
 
         std::cout << std::setprecision(std::numeric_limits<double>::max_digits10);
 
-        std::cout << "time,x,y,vx,vy,heading,on_track";
+        std::cout << "time,x,y,vx,vy,heading,on_track,throttle,steering";
 
         for (std::size_t i = 0; i < apex::simulation::sensor_count; ++i) {
             std::cout << ",sensor_" << i << "_distance"
@@ -89,9 +94,8 @@ int main(int argc, char *argv[]) {
         }
 
         std::cout << '\n';
-        write_sample(std::cout, world, settings.track, sensor_settings);
 
-        for (int step = 0; step < step_count; ++step) {
+        for (int step = 0; step <= step_count; ++step) {
             if (automatic) {
                 const auto observation = apex::simulation::observe_track(
                     world.vehicle, settings.track);
@@ -99,8 +103,11 @@ int main(int argc, char *argv[]) {
                 controls = apex::simulation::drive_automatically(
                     observation, settings.vehicle, settings.track, driver_settings);
             }
-            apex::simulation::step_world(world, controls, settings, dt);
-            write_sample(std::cout, world, settings.track,sensor_settings);
+            write_sample(std::cout, world, settings.track, sensor_settings, controls);
+
+            if (step < step_count) {
+                apex::simulation::step_world(world, controls, settings, dt);
+            }
         }
 
         const auto &body = world.vehicle.body;
