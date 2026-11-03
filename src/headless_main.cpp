@@ -41,15 +41,23 @@ namespace {
         output << '\n';
     }
 
-    double parse_control(const char *argument) {
+    double parse_number(const char *argument) {
         const std::string text{argument};
         std::size_t parsed{};
         const double value = std::stod(text, &parsed);
 
-        if (parsed != text.size() ||
-            !std::isfinite(value) ||
-            value < -1.0 || value > 1.0) {
-            throw std::invalid_argument("Controls must be finite numbers between -1 and 1");
+        if (parsed != text.size() || !std::isfinite(value)) {
+            throw std::invalid_argument("Expected a finite number");
+        }
+
+        return value;
+    }
+
+    double parse_control(const char *argument) {
+        const double value = parse_number(argument);
+
+        if (value < -1.0 || value > 1.0) {
+            throw std::invalid_argument("Controls must be between -1 and 1");
         }
 
         return value;
@@ -59,12 +67,35 @@ namespace {
 int main(int argc, char *argv[]) {
     try {
         const bool automatic =
-                argc == 2 && std::string{argv[1]} == "--auto";
-        if (!automatic && argc != 1 && argc != 3) {
-            throw std::invalid_argument("Usage: apex_headless [throttle steering] | --auto");
+                argc > 1 && std::string{argv[1]} == "--auto";
+
+        const bool valid_arguments = automatic
+                                         ? (argc == 2 || argc == 4)
+                                         : (argc == 1 || argc == 3);
+
+        if (!valid_arguments) {
+            throw std::invalid_argument(
+                "Usage: apex_headless [throttle steering] | "
+                "--auto [centerline_offset heading_offset]"
+            );
         }
         const apex::simulation::WorldSetting settings{};
         auto world = apex::simulation::make_initial_world(settings);
+
+        if (automatic && argc == 4) {
+            const double centerline_offset = parse_number(argv[2]);
+            const double heading_offset = parse_number(argv[3]);
+
+            if (std::abs(centerline_offset) >
+                settings.track.road_width * 0.5) {
+                throw std::invalid_argument(
+                    "Starting position must be within the road"
+                );
+            }
+
+            world.vehicle.body.position.x += centerline_offset;
+            world.vehicle.heading += heading_offset;
+        }
 
         constexpr int steps_per_second = 120;
         constexpr int duration_seconds = 10;
