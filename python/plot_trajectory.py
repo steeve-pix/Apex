@@ -15,7 +15,12 @@ def plot_trajectory(samples: list[dict[str, float]], output: Path) -> None:
     xs = [sample["x"] for sample in samples]
     ys = [sample["y"] for sample in samples]
     speeds = [math.hypot(sample["vx"], sample["vy"]) for sample in samples]
-    figure, (path_axes, speed_axes) = plt.subplots(1, 2, figsize=(10, 5), layout="constrained")
+
+    has_sensors = "sensor_0_distance" in samples[0]
+    panel_count = 3 if has_sensors else 2
+
+    figure, axes = plt.subplots(1, panel_count, figsize=(5 * panel_count, 5), layout="constrained")
+    path_axes, speed_axes = axes[:2]
 
     try:
         path_axes.plot(xs, ys, label="Vehicle path")
@@ -35,9 +40,33 @@ def plot_trajectory(samples: list[dict[str, float]], output: Path) -> None:
             xlabel="Simulation time (s)",
             ylabel="Speed (units/s)"
         )
+        if has_sensors:
+            sensor_axes = axes[2]
+            sensors_names = (
+                "Right",
+                "Front-right",
+                "Forward",
+                "Front-left",
+                "Left"
+            )
 
-        for axes in (path_axes, speed_axes):
-            axes.grid(True, alpha=0.3)
+            for index, name in enumerate(sensors_names):
+                distances = [
+                    sample[f"sensor_{index}_distance"]
+                    if sample[f"sensor_{index}_hit"] == 1.0 else math.nan for sample in samples
+                ]
+
+                sensor_axes.plot(times, distances, label=name)
+
+            sensor_axes.set(
+                title="Detected edge distances",
+                xlabel="Simulation time (s)",
+                ylabel="Distance (world units)"
+            )
+            sensor_axes.legend()
+
+        for panel in axes:
+            panel.grid(True, alpha=0.3)
 
         output.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(output, dpi=160)
