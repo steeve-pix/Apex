@@ -9,6 +9,7 @@
 #include <array>
 
 #include "simulation/driver.hpp"
+#include "simulation/sensors.hpp"
 #include "simulation/track.hpp"
 #include "simulation/world.hpp"
 
@@ -305,6 +306,47 @@ namespace {
         expect_near(fast.throttle, 0.0,
                     "Above target speed must release throttle");
     }
+
+    void test_track_rays() {
+        using apex::math::Vec2;
+        using apex::simulation::cast_track_ray;
+        using apex::simulation::TrackSettings;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        struct RayCase {
+            Vec2 origin;
+            double angle{};
+            double range{};
+            double expected_distance{};
+            bool expected_hit{};
+            const char *label{};
+        };
+
+        const std::array cases{
+            RayCase{{5.0, 0.0}, 0.0, 10.0, 1.0, true, "Outward"},
+            RayCase{{5.0, 0.0}, pi, 10.0, 1.0, true, "Inward"},
+            RayCase{
+                {5.0, 0.0}, pi / 2.0, 10.0,
+                std::sqrt(11.0), true, "Along road"
+            },
+            RayCase{{5.0, 0.0}, 0.0, 0.5, 0.5, false, "Beyond range"},
+            RayCase{{5.0, 0.0}, 0.0, 1.0, 1.0, true, "At range limit"},
+            RayCase{{7.0, 0.0}, 0.0, 10.0, 10.0, false, "Behind ray"},
+            RayCase{{-3.0, 4.0}, 0.0, 10.0, 3.0, true, "Tangent"}
+        };
+
+        for (const auto &test_case: cases) {
+            const auto reading = cast_track_ray(test_case.origin, test_case.angle, track, test_case.range);
+
+            expect(reading.hit == test_case.expected_hit, test_case.label);
+            expect_near(reading.distance, test_case.expected_distance, test_case.label);
+        }
+    }
 }
 
 int main() {
@@ -430,6 +472,7 @@ int main() {
         test_world();
         test_track_observation();
         test_automatic_driver();
+        test_track_rays();
 
         std::cout << "Physics checks passed.\n";
 
