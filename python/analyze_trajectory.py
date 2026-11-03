@@ -28,7 +28,13 @@ def load_trajectory(path: Path) -> list[dict[str, float]]:
         if present_sensor_columns and present_sensor_columns != sensor_columns:
             raise ValueError("CSV must contain all five sensor distance/hit pairs")
 
-        columns = required | present_sensor_columns
+        control_columns = {"throttle", "steering"}
+        present_control_columns = control_columns.intersection(reader.fieldnames)
+
+        if present_control_columns and present_control_columns != control_columns:
+            raise ValueError("CSV must contain all throttle/steering pairs")
+
+        columns = required | present_sensor_columns | present_control_columns
 
         samples = []
 
@@ -38,6 +44,9 @@ def load_trajectory(path: Path) -> list[dict[str, float]]:
             except (TypeError, ValueError) as e:
                 raise ValueError(f"Invalid numeric data on line {line_number}") from e
 
+            for name in present_control_columns:
+                if not -1.0 <= sample[name] <= 1.0:
+                    raise ValueError(f"Control {name} is outside [-1, 1] on line {line_number}")
             if not all(math.isfinite(value) for value in sample.values()):
                 raise ValueError(f"Non-finite data on line {line_number}")
             if sample["on_track"] not in (0.0, 1.0):
