@@ -11,12 +11,14 @@
 #include <iomanip>
 #include <sstream>
 
+#include "graphics/sensor_lines.hpp"
 #include "platform/glfw_session.hpp"
 #include "graphics/shader.hpp"
 #include "graphics/shader_program.hpp"
 #include "graphics/track_mesh.hpp"
 #include "graphics/triangle.hpp"
 #include "simulation/driver.hpp"
+#include "simulation/sensors.hpp"
 #include "simulation/track.hpp"
 #include "simulation/vehicle.hpp"
 #include "simulation/world.hpp"
@@ -155,6 +157,9 @@ int main() {
 
         apex::graphics::Triangle triangle;
 
+        apex::graphics::SensorLines sensor_lines;
+        const apex::simulation::SensorSettings sensor_settings{};
+
         const apex::simulation::WorldSetting world_settings{};
         apex::graphics::TrackMesh track_mesh{world_settings.track};
 
@@ -273,6 +278,12 @@ int main() {
 
             track_mesh.draw();
 
+
+            const auto readings = apex::simulation::sense_track(world.vehicle, world_settings.track, sensor_settings);
+            sensor_lines.update(world.vehicle, sensor_settings, readings);
+
+            glUniform3f(color_location, 1.0F, 0.85F, 0.15F);
+            sensor_lines.draw();
 
             const bool on_track = apex::simulation::is_on_track(
                 world.vehicle.body.position, world_settings.track);
