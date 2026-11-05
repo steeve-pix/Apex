@@ -1,1 +1,2 @@
 matplotlib
+torch==2.15.0
