@@ -60,6 +60,30 @@ target_link_libraries(apex PRIVATE glfw apex_glad apex_simulation)
 
 target_compile_features(apex PRIVATE cxx_std_20)
 
+option(APEX_BUILD_PYTHON_BINDINGS "Build Python simulation bindings" OFF)
+
+if (APEX_BUILD_PYTHON_BINDINGS)
+    find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+
+    execute_process(
+            COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+            OUTPUT_VARIABLE apex_pybind11_cmake_dir
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY
+    )
+    find_package(pybind11 CONFIG REQUIRED
+            PATHS "${apex_pybind11_cmake_dir}"
+            NO_DEFAULT_PATH
+    )
+
+    set_target_properties(apex_simulation PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+    )
+
+    pybind11_add_module(apex_core src/bindings/python_module.cpp)
+    target_link_libraries(apex_core PRIVATE apex_simulation)
+endif ()
+
 add_executable(apex_headless src/headless_main.cpp)
 target_link_libraries(apex_headless PRIVATE apex_simulation)
 
