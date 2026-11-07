@@ -160,7 +160,7 @@ int main() {
         apex::graphics::SensorLines sensor_lines;
         const apex::simulation::SensorSettings sensor_settings{};
 
-        const apex::simulation::WorldSetting world_settings{};
+        const apex::simulation::WorldSettings world_settings{};
         apex::graphics::TrackMesh track_mesh{world_settings.track};
 
         glClearColor(0.04f, 0.12f, 0.14f, 1.0f);

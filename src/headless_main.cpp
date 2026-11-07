@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
                 "--auto [centerline_offset heading_offset]"
             );
         }
-        const apex::simulation::WorldSetting settings{};
+        const apex::simulation::WorldSettings settings{};
         auto world = apex::simulation::make_initial_world(settings);
 
         if (automatic && argc == 4) {
