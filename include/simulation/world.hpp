@@ -4,7 +4,7 @@
 #include "simulation/vehicle.hpp"
 
 namespace apex::simulation {
-    struct WorldSetting {
+    struct WorldSettings {
         VehicleSettings vehicle{};
         TrackSettings track{};
     };
@@ -14,7 +14,7 @@ namespace apex::simulation {
         double elapsed_time{};
     };
 
-    [[nodiscard]] WorldState make_initial_world(const WorldSetting &settings);
+    [[nodiscard]] WorldState make_initial_world(const WorldSettings &settings);
 
-    void step_world(WorldState &world, const VehicleControls &controls, const WorldSetting &settings, double dt);
+    void step_world(WorldState &world, const VehicleControls &controls, const WorldSettings &settings, double dt);
 }
