@@ -133,7 +133,7 @@ namespace {
     }
 
     void test_world() {
-        apex::simulation::WorldSetting settings{};
+        apex::simulation::WorldSettings settings{};
         settings.track.centerline_radius = 5.0;
         settings.track.road_width = 2.0;
         settings.vehicle.motion.acceleration_strength = 2.0;
