@@ -13,6 +13,19 @@ SENSOR_FIELDS = tuple(
 TARGET_FIELDS = ("throttle", "steering")
 
 
+def build_input_features(sample: dict[str, float]) -> list[float]:
+    cosine = math.cos(sample["heading"])
+    sine = math.sin(sample["heading"])
+
+    forward_speed = sample["vx"] * cosine + sample["vy"] * sine
+    sideways_speed = -sample["vx"] * sine + sample["vy"] * cosine
+
+    features = [sample[name] for name in SENSOR_FIELDS]
+    features.extend([forward_speed, sideways_speed])
+
+    return features
+
+
 def load_training_data(path: Path) -> tuple[list[list[float]], list[list[float]]]:
     samples = load_trajectory(path)
 
@@ -25,16 +38,7 @@ def load_training_data(path: Path) -> tuple[list[list[float]], list[list[float]]
     targets = []
 
     for sample in samples:
-        cosine = math.cos(sample["heading"])
-        sine = math.sin(sample["heading"])
-
-        forward_speed = (sample["vx"] * cosine + sample["vy"] * sine)
-        sideways_speed = (-sample["vx"] * sine + sample["vy"] * cosine)
-
-        features = [sample[name] for name in SENSOR_FIELDS]
-        features.extend([forward_speed, sideways_speed])
-
-        inputs.append(features)
+        inputs.append(build_input_features(sample))
         targets.append([sample[name] for name in TARGET_FIELDS])
 
     return inputs, targets
