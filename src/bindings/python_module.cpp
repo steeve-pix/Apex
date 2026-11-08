@@ -7,7 +7,10 @@
 #include "simulation/vehicle.hpp"
 #include "simulation/world.hpp"
 #include "simulation/sensors.hpp"
-
+#include "graphics/simulation_window.hpp"
+#ifdef __APPLE__
+#include "platform/macos_application.hpp"
+#endif
 namespace py = pybind11;
 
 PYBIND11_MODULE(apex_core, module) {
@@ -22,6 +25,8 @@ PYBIND11_MODULE(apex_core, module) {
     using apex::simulation::WorldState;
     using apex::simulation::RayReading;
     using apex::simulation::SensorSettings;
+    using apex::graphics::WindowInput;
+    using apex::graphics::SimulationWindow;
 
     module.doc() = "Apex C++ simulation bindings";
 
@@ -84,9 +89,26 @@ PYBIND11_MODULE(apex_core, module) {
             .def_readwrite("max_distance", &SensorSettings::max_distance);
 
 
+    py::class_<WindowInput>(module, "WindowInput")
+            .def_readonly("controls", &WindowInput::controls)
+            .def_readonly("close_requested", &WindowInput::close_requested)
+            .def_readonly("reset_requested", &WindowInput::reset_requested)
+            .def_readonly("pause_requested", &WindowInput::pause_requested)
+            .def_readonly("autopilot_requested", &WindowInput::autopilot_requested);
+
+    py::class_<SimulationWindow>(module, "SimulationWindow")
+            .def(py::init<const TrackSettings &>(), py::arg("track"))
+            .def("poll_events", &SimulationWindow::poll_events)
+            .def("draw", &SimulationWindow::draw, py::arg("world"), py::arg("sensors"), py::arg("status"))
+            .def("close", &SimulationWindow::close);
+
     module.def("make_initial_world", &apex::simulation::make_initial_world, py::arg("settings"));
     module.def("step_world", &apex::simulation::step_world, py::arg("world"), py::arg("controls"), py::arg("settings"),
                py::arg("dt"));
     module.def("sense_track", &apex::simulation::sense_track, py::arg("vehicle"), py::arg("track"), py::arg("sensors"));
     module.def("is_on_track", &apex::simulation::is_on_track, py::arg("position"), py::arg("track"));
+
+#ifdef __APPLE__
+    module.def("set_application_icon", &apex::platform::set_application_icon, py::arg("path"));
+#endif
 }
