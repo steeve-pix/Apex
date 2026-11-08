@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.24)
 
 project(Apex VERSION 0.1.0 LANGUAGES C CXX)
 
+if (APPLE)
+    enable_language(OBJC OBJCXX)
+endif ()
+
 include(FetchContent)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -45,20 +49,34 @@ target_include_directories(apex_simulation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/i
 
 target_compile_features(apex_simulation PUBLIC cxx_std_20)
 
-add_executable(apex src/main.cpp
+add_library(apex_graphics STATIC
         src/platform/glfw_session.cpp
         src/graphics/shader.cpp
         src/graphics/shader_program.cpp
         src/graphics/triangle.cpp
         src/graphics/track_mesh.cpp
         src/graphics/sensor_lines.cpp
+        src/graphics/simulation_window.cpp
 )
 
-target_include_directories(apex PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(apex PRIVATE glfw apex_glad apex_simulation)
+target_link_libraries(apex_graphics PUBLIC
+        glfw
+        apex_glad
+        apex_simulation
+)
 
-target_compile_features(apex PRIVATE cxx_std_20)
+if (APPLE)
+    enable_language(OBJCXX)
+
+    target_sources(apex_graphics PRIVATE
+            src/platform/macos_application.mm
+    )
+
+    target_link_libraries(apex_graphics PRIVATE "-framework Cocoa")
+endif ()
+
+add_executable(apex src/main.cpp)
+target_link_libraries(apex PRIVATE apex_graphics)
 
 option(APEX_BUILD_PYTHON_BINDINGS "Build Python simulation bindings" OFF)
 
@@ -76,12 +94,13 @@ if (APEX_BUILD_PYTHON_BINDINGS)
             NO_DEFAULT_PATH
     )
 
-    set_target_properties(apex_simulation PROPERTIES
-            POSITION_INDEPENDENT_CODE ON
+    set_target_properties(
+            apex_simulation apex_graphics apex_glad glfw
+            PROPERTIES POSITION_INDEPENDENT_CODE ON
     )
 
     pybind11_add_module(apex_core src/bindings/python_module.cpp)
-    target_link_libraries(apex_core PRIVATE apex_simulation)
+    target_link_libraries(apex_core PRIVATE apex_graphics)
 endif ()
 
 add_executable(apex_headless src/headless_main.cpp)
