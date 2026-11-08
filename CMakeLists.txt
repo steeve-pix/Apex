@@ -31,6 +31,18 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(glad)
 
+set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
+set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        glm
+        GIT_REPOSITORY https://github.com/g-truc/glm.git
+        GIT_TAG 1.0.3
+        GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(glm)
+
 glad_add_library(apex_glad STATIC
         REPRODUCIBLE
         API gl:core=3.3
@@ -57,12 +69,15 @@ add_library(apex_graphics STATIC
         src/graphics/track_mesh.cpp
         src/graphics/sensor_lines.cpp
         src/graphics/simulation_window.cpp
+        src/graphics/ground_mesh.cpp
+        src/graphics/barrier_mesh.cpp
 )
 
 target_link_libraries(apex_graphics PUBLIC
         glfw
         apex_glad
         apex_simulation
+        glm::glm
 )
 
 if (APPLE)
