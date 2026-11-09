@@ -133,6 +133,22 @@ namespace apex::graphics {
         settings_ = initial_settings_;
     }
 
+    void OrbitCamera::set_target(glm::vec3 target) {
+        if (!is_finite(target)) {
+            throw std::invalid_argument("Camera target must be finite");
+        }
+
+        const auto offset = settings_.position - settings_.target;
+        const auto position = target + offset;
+
+        if (!is_finite(position)) {
+            throw std::invalid_argument("Camera position must be finite");
+        }
+
+        settings_.target = target;
+        settings_.position = position;
+    }
+
     const CameraSettings &OrbitCamera::settings() const noexcept {
         return settings_;
     }
