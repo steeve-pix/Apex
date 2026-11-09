@@ -104,6 +104,7 @@ namespace apex::graphics {
 
             uniform vec3 color;
             uniform bool curb_pattern;
+            uniform bool start_line_enabled;
             uniform float track_radius;
             uniform float road_half_width;
             uniform float curb_segments;
@@ -203,7 +204,32 @@ namespace apex::graphics {
 
                     base_color = mix(vec3(0.80, 0.07, 0.05),vec3(0.93, 0.91, 0.85),stripe);
                 }
+                if (start_line_enabled) {
+                    const float column_count = 10.0;
 
+                    float cell_size =
+                        (road_half_width * 2.0) / column_count;
+
+                    float angle =
+                        atan(surface_position.y, surface_position.x);
+
+                    float distance_along_track = angle * track_radius;
+
+                    if (abs(distance_along_track) < cell_size) {
+                        float distance_across_track =
+                            length(surface_position.xy)
+                            - (track_radius - road_half_width);
+
+                        float column = floor(distance_across_track / cell_size);
+                        float row = floor(
+                            (distance_along_track + cell_size) / cell_size
+                        );
+
+                        float checker = mod(column + row, 2.0);
+
+                        base_color = mix(vec3(0.06),vec3(0.94),checker   );
+                    }
+                }
                 fragment_color = vec4(base_color * brightness, 1.0);
             }
         )glsl";
@@ -300,6 +326,7 @@ namespace apex::graphics {
         GLint use_vertex_color_location{};
         GLint shadow_depth_location{};
         GLint scene_light_view_projection_location{};
+        GLint start_line_enabled_location{};
 
         bool reset_was_pressed{};
         bool pause_was_pressed{};
@@ -380,6 +407,7 @@ namespace apex::graphics {
             color_location = program.uniform_location("color");
 
             curb_pattern_location = program.uniform_location("curb_pattern");
+            start_line_enabled_location = program.uniform_location("start_line_enabled");
             track_radius_location = program.uniform_location("track_radius");
             road_half_width_location = program.uniform_location("road_half_width");
             curb_segments_location = program.uniform_location("curb_segments");
@@ -625,6 +653,11 @@ namespace apex::graphics {
 
         view.program.use();
 
+        glUniform1i(view.start_line_enabled_location, GL_FALSE);
+
+        glUniform1f(view.track_radius_location, static_cast<float>(view.track_settings.centerline_radius));
+        glUniform1f(view.road_half_width_location, static_cast<float>(view.track_settings.road_width * 0.5));
+
         view.shadow_map.bind_texture(0);
         glUniform1i(view.shadow_depth_location, 0);
         glUniformMatrix4fv(
@@ -680,14 +713,14 @@ namespace apex::graphics {
         glUniform1f(view.elevation_location, road_elevation);
         glUniform3f(view.color_location, 0.25F, 0.27F, 0.29F);
         glUniform1i(view.curb_pattern_location, GL_FALSE);
+        glUniform1i(view.start_line_enabled_location, GL_TRUE);
         view.track_mesh.draw();
+        glUniform1i(view.start_line_enabled_location, GL_FALSE);
 
         constexpr float curb_elevation = 0.001F;
         constexpr float curb_segments = 80.0F;
 
         glUniform1i(view.curb_pattern_location, GL_TRUE);
-        glUniform1f(view.track_radius_location, static_cast<float>(view.track_settings.centerline_radius));
-        glUniform1f(view.road_half_width_location, static_cast<float>(view.track_settings.road_width * 0.5));
         glUniform1f(view.curb_segments_location, curb_segments);
         glUniform1f(view.elevation_location, curb_elevation);
 
