@@ -57,6 +57,7 @@ add_library(apex_simulation STATIC
         src/simulation/sensors.cpp
         src/simulation/track_path.cpp
         src/simulation/circuit_layout.cpp
+        src/simulation/track_boundaries.cpp
 )
 
 target_include_directories(apex_simulation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
