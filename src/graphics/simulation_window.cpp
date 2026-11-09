@@ -206,8 +206,14 @@ namespace apex::graphics {
         bool reset_was_pressed{};
         bool pause_was_pressed{};
         bool autopilot_was_pressed{};
+        bool camera_reset_was_pressed{};
+        bool orbit_dragging{};
 
-        CameraSettings camera{};
+        double previous_cursor_x{};
+        double previous_cursor_y{};
+        double scroll_delta{};
+
+        OrbitCamera camera{};
 
         explicit Impl(const simulation::TrackSettings &track)
             : track_settings{track}, track_mesh{track},
@@ -238,6 +244,17 @@ namespace apex::graphics {
 
             glClearColor(0.04F, 0.12F, 0.14F, 1.0F);
             glEnable(GL_DEPTH_TEST);
+
+            glfwSetWindowUserPointer(window.get(), this);
+
+            glfwSetScrollCallback(
+                window.get(),
+                [](GLFWwindow *window, double, double vertical_offset) {
+                    auto *view = static_cast<Impl *>(glfwGetWindowUserPointer(window));
+
+                    view->scroll_delta += vertical_offset;
+                }
+            );
         }
     };
 
@@ -289,6 +306,55 @@ namespace apex::graphics {
 
         input.autopilot_requested =
                 pressed_once(GLFW_KEY_P, view.autopilot_was_pressed);
+
+        const bool focused =
+                glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
+
+        if (focused) {
+            if (pressed_once(GLFW_KEY_C, view.camera_reset_was_pressed)) {
+                view.camera.reset();
+                view.orbit_dragging = false;
+                view.scroll_delta = 0.0;
+            }
+
+            double cursor_x{};
+            double cursor_y{};
+            glfwGetCursorPos(window, &cursor_x, &cursor_y);
+
+            const bool dragging =
+                    glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ||
+                    glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+            if (dragging && view.orbit_dragging) {
+                constexpr double orbit_sensitivity = 0.005;
+
+                const double horizontal_change =
+                        cursor_x - view.previous_cursor_x;
+
+                const double vertical_change =
+                        cursor_y - view.previous_cursor_y;
+
+                view.camera.orbit(
+                    static_cast<float>(-horizontal_change * orbit_sensitivity),
+                    static_cast<float>(vertical_change * orbit_sensitivity)
+                );
+            }
+
+            view.previous_cursor_x = cursor_x;
+            view.previous_cursor_y = cursor_y;
+            view.orbit_dragging = dragging;
+
+            if (view.scroll_delta != 0.0) {
+                const float amount = static_cast<float>(std::clamp(view.scroll_delta, -50.0, 50.0));
+
+                view.camera.zoom(amount);
+                view.scroll_delta = 0.0;
+            }
+        } else {
+            view.orbit_dragging = false;
+            view.camera_reset_was_pressed = false;
+            view.scroll_delta = 0.0;
+        }
 
         if (key_down(GLFW_KEY_W) || key_down(GLFW_KEY_UP)) {
             input.controls.throttle += 1.0;
@@ -344,8 +410,7 @@ namespace apex::graphics {
         const float aspect =
                 static_cast<float>(width) / static_cast<float>(height);
 
-        const auto &camera =
-                view.camera;
+        const auto &camera = view.camera.settings();
 
         const glm::mat4 projection = glm::perspective(glm::radians(camera.vertical_fov_degrees), aspect,
                                                       camera.near_clip, camera.far_clip);

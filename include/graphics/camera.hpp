@@ -12,4 +12,22 @@ namespace apex::graphics {
         float near_clip{0.01F};
         float far_clip{20.0F};
     };
+
+    class OrbitCamera {
+    public:
+        explicit OrbitCamera(const CameraSettings &settings = {});
+
+
+        void orbit(float yaw_delta, float pitch_delta);
+
+        void zoom(float amount);
+
+        void reset();
+
+        [[nodiscard]] const CameraSettings &settings() const noexcept;
+
+    private:
+        CameraSettings initial_settings_;
+        CameraSettings settings_;
+    };
 }
