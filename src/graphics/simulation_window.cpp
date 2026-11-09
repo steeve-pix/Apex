@@ -12,6 +12,7 @@
 
 #include "graphics/barrier_mesh.hpp"
 #include "graphics/camera.hpp"
+#include "graphics/car_mesh.hpp"
 #include "platform/glfw_session.hpp"
 #include "graphics/sensor_lines.hpp"
 #include "graphics/shader.hpp"
@@ -26,6 +27,7 @@ namespace apex::graphics {
             #version 330 core
 
             layout(location = 0) in vec3 position;
+            layout(location = 1) in vec3 vertex_color;
 
             uniform vec2 offset;
             uniform float heading;
@@ -33,6 +35,7 @@ namespace apex::graphics {
             uniform mat4 view_projection;
 
             out vec3 surface_position;
+            out vec3 surface_color;
 
             void main() {
                 float c = cos(heading);
@@ -49,6 +52,7 @@ namespace apex::graphics {
                 );
 
                 surface_position = world_position;
+                surface_color = vertex_color;
 
                 gl_Position = view_projection * vec4(world_position, 1.0);
             }
@@ -70,6 +74,9 @@ namespace apex::graphics {
 
             out vec4 fragment_color;
 
+            in vec3 surface_color;
+            uniform bool use_vertex_color;
+
             void main() {
                 float brightness = 1.0;
 
@@ -88,6 +95,10 @@ namespace apex::graphics {
                 }
 
                 vec3 base_color = color;
+
+                if (use_vertex_color) {
+                    base_color = surface_color * color;
+                }
 
                 if (curb_pattern) {
                     vec2 world_xy = surface_position.xy;
@@ -173,7 +184,7 @@ namespace apex::graphics {
         ShaderProgram program;
         TrackMesh track_mesh;
         TrackMesh curb_mesh;
-        Triangle vehicle_mesh;
+        CarMesh vehicle_mesh;
         GroundMesh ground_mesh;
         BarrierMesh barrier_mesh;
 
@@ -190,6 +201,7 @@ namespace apex::graphics {
         GLint curb_segments_location{};
         GLint lighting_enabled_location{};
         GLint direction_to_light_location{};
+        GLint use_vertex_color_location{};
 
         bool reset_was_pressed{};
         bool pause_was_pressed{};
@@ -221,6 +233,8 @@ namespace apex::graphics {
 
             lighting_enabled_location = program.uniform_location("lighting_enabled");
             direction_to_light_location = program.uniform_location("direction_to_light");
+
+            use_vertex_color_location = program.uniform_location("use_vertex_color");
 
             glClearColor(0.04F, 0.12F, 0.14F, 1.0F);
             glEnable(GL_DEPTH_TEST);
@@ -322,6 +336,8 @@ namespace apex::graphics {
 
         view.program.use();
 
+        glUniform1i(view.use_vertex_color_location, GL_FALSE);
+
         glUniform1i(view.lighting_enabled_location, GL_TRUE);
         glUniform3f(view.direction_to_light_location, -0.5F, -0.4F, 1.0F);
 
@@ -395,7 +411,7 @@ namespace apex::graphics {
                 simulation::is_on_track(position, view.track_settings);
 
         if (on_track) {
-            glUniform3f(view.color_location, 0.95F, 0.25F, 0.12F);
+            glUniform3f(view.color_location, 1.0F, 1.0F, 1.0F);
         } else {
             glUniform3f(view.color_location, 1.0F, 0.85F, 0.15F);
         }
@@ -404,7 +420,9 @@ namespace apex::graphics {
         glUniform1f(view.heading_location, static_cast<float>(world.vehicle.heading));
         glUniform1f(view.elevation_location, vehicle_elevation);
 
+        glUniform1i(view.use_vertex_color_location, GL_TRUE);
         view.vehicle_mesh.draw();
+        glUniform1i(view.use_vertex_color_location, GL_FALSE);
 
         glfwSwapBuffers(window);
     }
