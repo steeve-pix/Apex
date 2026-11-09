@@ -18,11 +18,46 @@
 #include "graphics/shader.hpp"
 #include "graphics/shader_program.hpp"
 #include "graphics/track_mesh.hpp"
-#include "graphics/triangle.hpp"
 #include "graphics/ground_mesh.hpp"
+#include "graphics/shadow_map.hpp"
 
 namespace apex::graphics {
     namespace {
+        constexpr char shadow_vertex_shader_source[] = R"glsl(
+            #version 330 core
+
+            layout(location = 0) in vec3 position;
+
+            uniform vec2 offset;
+            uniform float heading;
+            uniform float elevation;
+            uniform mat4 light_view_projection;
+
+            void main() {
+                float c = cos(heading);
+                float s = sin(heading);
+
+                vec2 rotated_position = vec2(
+                    c * position.x - s * position.y,
+                    s * position.x + c * position.y
+                );
+
+                vec3 world_position = vec3(
+                    rotated_position + offset,
+                    position.z + elevation
+                );
+
+                gl_Position =
+                    light_view_projection * vec4(world_position, 1.0);
+            }
+        )glsl";
+
+        constexpr char shadow_fragment_shader_source[] = R"glsl(
+            #version 330 core
+
+            void main() {
+            }
+        )glsl";
         constexpr char vertex_shader_source[] = R"glsl(
             #version 330 core
 
@@ -77,6 +112,48 @@ namespace apex::graphics {
             in vec3 surface_color;
             uniform bool use_vertex_color;
 
+            uniform sampler2D shadow_depth;
+            uniform mat4 light_view_projection;
+
+            float shadow_amount(vec3 normal, vec3 light) {
+                vec4 light_position =
+                    light_view_projection * vec4(surface_position, 1.0);
+
+                vec3 projected = light_position.xyz / light_position.w;
+                projected = projected * 0.5 + 0.5;
+
+                if (any(lessThan(projected, vec3(0.0))) ||
+                    any(greaterThan(projected, vec3(1.0)))) {
+                    return 0.0;
+                }
+
+                float bias = max(
+                    0.0003 * (1.0 - max(dot(normal, light), 0.0)),
+                    0.00005
+                );
+
+                vec2 texel_size =
+                    1.0 / vec2(textureSize(shadow_depth, 0));
+
+                float shadow = 0.0;
+
+                for (int y = -1; y <= 1; ++y) {
+                    for (int x = -1; x <= 1; ++x) {
+                        vec2 sample_position =
+                            projected.xy + vec2(x, y) * texel_size;
+
+                        float closest_depth =
+                            textureLod(shadow_depth, sample_position, 0.0).r;
+
+                        if (projected.z - bias > closest_depth) {
+                            shadow += 1.0;
+                        }
+                    }
+                }
+
+                return shadow / 9.0;
+            }
+
             void main() {
                 float brightness = 1.0;
 
@@ -90,8 +167,11 @@ namespace apex::graphics {
 
                     float diffuse = max(dot(normal, light), 0.0);
 
+                    float shadow = shadow_amount(normal, light);
+
                     const float ambient = 0.35;
-                    brightness = ambient + (1.0 - ambient) * diffuse;
+                    brightness =
+                        ambient + (1.0 - ambient) * diffuse * (1.0 - shadow);
                 }
 
                 vec3 base_color = color;
@@ -182,6 +262,15 @@ namespace apex::graphics {
         simulation::TrackSettings track_settings;
 
         ShaderProgram program;
+
+        ShaderProgram shadow_program;
+        ShadowMap shadow_map;
+
+        GLint shadow_offset_location{};
+        GLint shadow_heading_location{};
+        GLint shadow_elevation_location{};
+        GLint light_view_projection_location{};
+
         TrackMesh track_mesh;
         TrackMesh curb_mesh;
         CarMesh vehicle_mesh;
@@ -202,6 +291,8 @@ namespace apex::graphics {
         GLint lighting_enabled_location{};
         GLint direction_to_light_location{};
         GLint use_vertex_color_location{};
+        GLint shadow_depth_location{};
+        GLint scene_light_view_projection_location{};
 
         bool reset_was_pressed{};
         bool pause_was_pressed{};
@@ -229,6 +320,19 @@ namespace apex::graphics {
 
             program.link(vertex_shader, fragment_shader);
 
+            Shader shadow_vertex_shader{GL_VERTEX_SHADER};
+            shadow_vertex_shader.compile(shadow_vertex_shader_source);
+
+            Shader shadow_fragment_shader{GL_FRAGMENT_SHADER};
+            shadow_fragment_shader.compile(shadow_fragment_shader_source);
+
+            shadow_program.link(shadow_vertex_shader, shadow_fragment_shader);
+
+            shadow_offset_location = shadow_program.uniform_location("offset");
+            shadow_heading_location = shadow_program.uniform_location("heading");
+            shadow_elevation_location = shadow_program.uniform_location("elevation");
+            light_view_projection_location = shadow_program.uniform_location("light_view_projection");
+
             offset_location = program.uniform_location("offset");
             view_projection_location = program.uniform_location("view_projection");
             elevation_location = program.uniform_location("elevation");
@@ -244,6 +348,9 @@ namespace apex::graphics {
             direction_to_light_location = program.uniform_location("direction_to_light");
 
             use_vertex_color_location = program.uniform_location("use_vertex_color");
+
+            shadow_depth_location = program.uniform_location("shadow_depth");
+            scene_light_view_projection_location = program.uniform_location("light_view_projection");
 
             glClearColor(0.04F, 0.12F, 0.14F, 1.0F);
             glEnable(GL_DEPTH_TEST);
@@ -410,15 +517,67 @@ namespace apex::graphics {
             return;
         }
 
+        constexpr float road_elevation = 0.0F;
+        constexpr float ground_elevation = -0.005F;
+        constexpr float sensor_elevation = 0.002F;
+        constexpr float vehicle_elevation = 0.004F;
+
+        const glm::vec3 direction_to_light =
+                glm::normalize(glm::vec3{-0.5F, -0.4F, 1.0F});
+
+        const float shadow_extent = std::max(
+            1.0F, static_cast<float>(view.track_settings.centerline_radius + view.track_settings.road_width * 0.5) +
+                  0.3F);
+
+        const glm::mat4 light_projection = glm::ortho(-shadow_extent, shadow_extent, -shadow_extent, shadow_extent,
+                                                      0.1F, shadow_extent * 6.0F);
+
+        const glm::mat4 light_view = glm::lookAt(direction_to_light * (shadow_extent * 3.0F), glm::vec3{0.0F},
+                                                 glm::vec3{0.0F, 0.0F, 1.0F});
+
+        const glm::mat4 light_view_projection =
+                light_projection * light_view;
+
+        view.shadow_map.bind_for_writing();
+        view.shadow_program.use();
+
+        glUniformMatrix4fv(view.light_view_projection_location, 1, GL_FALSE, glm::value_ptr(light_view_projection));
+
+        glUniform2f(view.shadow_offset_location, 0.0F, 0.0F);
+        glUniform1f(view.shadow_heading_location, 0.0F);
+        glUniform1f(view.shadow_elevation_location, ground_elevation);
+
+        view.barrier_mesh.draw();
+
+        const auto &vehicle_position = world.vehicle.body.position;
+
+        glUniform2f(view.shadow_offset_location, static_cast<float>(vehicle_position.x),
+                    static_cast<float>(vehicle_position.y));
+        glUniform1f(view.shadow_heading_location, static_cast<float>(world.vehicle.heading));
+        glUniform1f(view.shadow_elevation_location, vehicle_elevation);
+
+        view.vehicle_mesh.draw();
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         view.program.use();
 
+        view.shadow_map.bind_texture(0);
+        glUniform1i(view.shadow_depth_location, 0);
+        glUniformMatrix4fv(
+            view.scene_light_view_projection_location,
+            1,
+            GL_FALSE,
+            glm::value_ptr(light_view_projection)
+        );
+
         glUniform1i(view.use_vertex_color_location, GL_FALSE);
 
         glUniform1i(view.lighting_enabled_location, GL_TRUE);
-        glUniform3f(view.direction_to_light_location, -0.5F, -0.4F, 1.0F);
+        glUniform3fv(view.direction_to_light_location, 1, glm::value_ptr(direction_to_light));
 
         const float aspect =
                 static_cast<float>(width) / static_cast<float>(height);
@@ -445,18 +604,14 @@ namespace apex::graphics {
 
         const glm::mat4 view_projection = projection * camera_view;
 
-        glUniformMatrix4fv(view.view_projection_location, 1,GL_FALSE, glm::value_ptr(view_projection));
+        glUniformMatrix4fv(view.view_projection_location, 1, GL_FALSE, glm::value_ptr(view_projection));
 
-        constexpr float road_elevation = 0.0F;
-        constexpr float sensor_elevation = 0.002F;
-        constexpr float vehicle_elevation = 0.004F;
 
         glUniform2f(view.offset_location, 0.0F, 0.0F);
         glUniform1f(view.heading_location, 0.0F);
 
-        constexpr float ground_elevation = -0.005F;
 
-        glUniform1i(view.curb_pattern_location,GL_FALSE);
+        glUniform1i(view.curb_pattern_location, GL_FALSE);
         glUniform1f(view.elevation_location, ground_elevation);
         glUniform3f(view.color_location, 0.68F, 0.65F, 0.53F);
 
@@ -464,13 +619,13 @@ namespace apex::graphics {
 
         glUniform1f(view.elevation_location, road_elevation);
         glUniform3f(view.color_location, 0.25F, 0.27F, 0.29F);
-        glUniform1i(view.curb_pattern_location,GL_FALSE);
+        glUniform1i(view.curb_pattern_location, GL_FALSE);
         view.track_mesh.draw();
 
         constexpr float curb_elevation = 0.001F;
         constexpr float curb_segments = 80.0F;
 
-        glUniform1i(view.curb_pattern_location,GL_TRUE);
+        glUniform1i(view.curb_pattern_location, GL_TRUE);
         glUniform1f(view.track_radius_location, static_cast<float>(view.track_settings.centerline_radius));
         glUniform1f(view.road_half_width_location, static_cast<float>(view.track_settings.road_width * 0.5));
         glUniform1f(view.curb_segments_location, curb_segments);
@@ -490,9 +645,9 @@ namespace apex::graphics {
 
         glUniform1f(view.elevation_location, sensor_elevation);
         glUniform3f(view.color_location, 1.0F, 0.85F, 0.15F);
-        glUniform1i(view.lighting_enabled_location,GL_FALSE);
+        glUniform1i(view.lighting_enabled_location, GL_FALSE);
         view.sensor_lines.draw();
-        glUniform1i(view.lighting_enabled_location,GL_TRUE);
+        glUniform1i(view.lighting_enabled_location, GL_TRUE);
 
         const auto &position =
                 world.vehicle.body.position;
