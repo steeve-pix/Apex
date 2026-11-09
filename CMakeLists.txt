@@ -73,6 +73,7 @@ add_library(apex_graphics STATIC
         src/graphics/barrier_mesh.cpp
         src/graphics/car_mesh.cpp
         src/graphics/camera.cpp
+        src/graphics/shadow_map.cpp
 )
 
 target_link_libraries(apex_graphics PUBLIC
