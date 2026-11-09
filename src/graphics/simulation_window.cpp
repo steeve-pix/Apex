@@ -9,7 +9,11 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <cmath>
+#include <numbers>
+#include <vector>
 
+#include "graphics/tree_mesh.hpp"
 #include "graphics/barrier_mesh.hpp"
 #include "graphics/camera.hpp"
 #include "graphics/car_mesh.hpp"
@@ -276,6 +280,9 @@ namespace apex::graphics {
         CarMesh vehicle_mesh;
         GroundMesh ground_mesh;
         BarrierMesh barrier_mesh;
+        TreeSettings tree_settings{};
+        TreeMesh tree_mesh{tree_settings};
+        std::vector<glm::vec2> tree_positions;
 
         SensorLines sensor_lines;
 
@@ -312,6 +319,39 @@ namespace apex::graphics {
         explicit Impl(const simulation::TrackSettings &track)
             : track_settings{track}, track_mesh{track},
               curb_mesh{curb_geometry_settings(track)}, barrier_mesh{track} {
+            constexpr int tree_count = 16;
+            constexpr float tree_clearance = 0.10F;
+            constexpr float radial_variation = 0.08F;
+
+            const BarrierSettings barrier_settings{};
+
+            const float base_radius =
+                    static_cast<float>(
+                        track.centerline_radius + track.road_width * 0.5
+                    )
+                    + barrier_settings.clearance
+                    + barrier_settings.thickness
+                    + tree_settings.crown_radius
+                    + tree_clearance;
+
+            tree_positions.reserve(tree_count);
+
+            for (int index = 0; index < tree_count; ++index) {
+                const float angle =
+                        2.0F * std::numbers::pi_v<float>
+                        * (static_cast<float>(index) + 0.5F)
+                        / static_cast<float>(tree_count);
+
+                const float radius =
+                        base_radius
+                        + radial_variation * 0.5F
+                        * (1.0F + std::sin(angle * 3.0F));
+
+                tree_positions.emplace_back(
+                    radius * std::cos(angle),
+                    radius * std::sin(angle)
+                );
+            }
             Shader vertex_shader{GL_VERTEX_SHADER};
             vertex_shader.compile(vertex_shader_source);
 
@@ -365,6 +405,16 @@ namespace apex::graphics {
                     view->scroll_delta += vertical_offset;
                 }
             );
+        }
+
+        void draw_trees(GLint offset_uniform, GLint heading_uniform, GLint elevation_uniform, float elevation) const {
+            glUniform1f(heading_uniform, 0.0F);
+            glUniform1f(elevation_uniform, elevation);
+
+            for (const auto &position: tree_positions) {
+                glUniform2f(offset_uniform, position.x, position.y);
+                tree_mesh.draw();
+            }
         }
     };
 
@@ -525,9 +575,16 @@ namespace apex::graphics {
         const glm::vec3 direction_to_light =
                 glm::normalize(glm::vec3{-0.5F, -0.4F, 1.0F});
 
-        const float shadow_extent = std::max(
+        float shadow_extent = std::max(
             1.0F, static_cast<float>(view.track_settings.centerline_radius + view.track_settings.road_width * 0.5) +
                   0.3F);
+
+        const float tree_height = view.tree_settings.trunk_height + view.tree_settings.crown_radius * 1.5F;
+
+        for (const auto &position: view.tree_positions) {
+            shadow_extent = std::max(shadow_extent,
+                                     glm::length(position) + view.tree_settings.crown_radius + tree_height);
+        }
 
         const glm::mat4 light_projection = glm::ortho(-shadow_extent, shadow_extent, -shadow_extent, shadow_extent,
                                                       0.1F, shadow_extent * 6.0F);
@@ -548,6 +605,9 @@ namespace apex::graphics {
         glUniform1f(view.shadow_elevation_location, ground_elevation);
 
         view.barrier_mesh.draw();
+
+        view.draw_trees(view.shadow_offset_location, view.shadow_heading_location, view.shadow_elevation_location,
+                        ground_elevation);
 
         const auto &vehicle_position = world.vehicle.body.position;
 
@@ -638,6 +698,15 @@ namespace apex::graphics {
         glUniform1f(view.elevation_location, ground_elevation);
         glUniform3f(view.color_location, 0.16F, 0.17F, 0.18F);
         view.barrier_mesh.draw();
+
+        glUniform1i(view.use_vertex_color_location, GL_TRUE);
+        glUniform3f(view.color_location, 1.0F, 1.0F, 1.0F);
+
+        view.draw_trees(view.offset_location, view.heading_location, view.elevation_location, ground_elevation);
+
+        glUniform1i(view.use_vertex_color_location, GL_FALSE);
+        glUniform2f(view.offset_location, 0.0F, 0.0F);
+        glUniform1f(view.heading_location, 0.0F);
 
         const auto readings = simulation::sense_track(world.vehicle, view.track_settings, sensors);
 
