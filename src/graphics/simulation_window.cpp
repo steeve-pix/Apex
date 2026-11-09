@@ -209,6 +209,9 @@ namespace apex::graphics {
         bool camera_reset_was_pressed{};
         bool orbit_dragging{};
 
+        bool follow_vehicle{};
+        bool follow_was_pressed{};
+
         double previous_cursor_x{};
         double previous_cursor_y{};
         double scroll_delta{};
@@ -311,10 +314,19 @@ namespace apex::graphics {
                 glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
 
         if (focused) {
+            if (pressed_once(GLFW_KEY_F, view.follow_was_pressed)) {
+                view.follow_vehicle = !view.follow_vehicle;
+
+                if (!view.follow_vehicle) {
+                    view.camera.reset();
+                }
+            }
+
             if (pressed_once(GLFW_KEY_C, view.camera_reset_was_pressed)) {
                 view.camera.reset();
                 view.orbit_dragging = false;
                 view.scroll_delta = 0.0;
+                view.follow_vehicle = false;
             }
 
             double cursor_x{};
@@ -354,6 +366,7 @@ namespace apex::graphics {
             view.orbit_dragging = false;
             view.camera_reset_was_pressed = false;
             view.scroll_delta = 0.0;
+            view.follow_was_pressed = false;
         }
 
         if (key_down(GLFW_KEY_W) || key_down(GLFW_KEY_UP)) {
@@ -409,6 +422,17 @@ namespace apex::graphics {
 
         const float aspect =
                 static_cast<float>(width) / static_cast<float>(height);
+
+        if (view.follow_vehicle) {
+            const auto &position = world.vehicle.body.position;
+            constexpr float follow_height = 0.03F;
+
+            view.camera.set_target(glm::vec3{
+                static_cast<float>(position.x),
+                static_cast<float>(position.y),
+                follow_height
+            });
+        }
 
         const auto &camera = view.camera.settings();
 

@@ -24,6 +24,8 @@ namespace apex::graphics {
 
         void reset();
 
+        void set_target(glm::vec3 target);
+
         [[nodiscard]] const CameraSettings &settings() const noexcept;
 
     private:
