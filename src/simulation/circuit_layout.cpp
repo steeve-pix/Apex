@@ -63,7 +63,7 @@ namespace apex::simulation {
             math::Vec2{-2.30, -0.60}
         };
 
-        constexpr double layout_scale = 1.5;
+        constexpr double layout_scale = 3.0;
         std::vector<math::Vec2> points;
         points.reserve(control_points.size() * static_cast<std::size_t>(samples_per_section));
 

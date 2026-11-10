@@ -128,11 +128,8 @@ int main(int argc, char *argv[]) {
 
         for (int step = 0; step <= step_count; ++step) {
             if (automatic) {
-                const auto observation = apex::simulation::observe_track(
-                    world.vehicle, settings.track);
-
-                controls = apex::simulation::drive_automatically(
-                    observation, settings.vehicle, settings.track, driver_settings);
+                controls = apex::simulation::drive_automatically(world.vehicle, settings.vehicle, settings.track,
+                                                                 driver_settings);
             }
             write_sample(std::cout, world, settings.track, sensor_settings, controls);
 

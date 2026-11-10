@@ -71,18 +71,8 @@ int main() {
                     auto controls = input.controls;
 
                     if (automatic) {
-                        const auto observation =
-                                apex::simulation::observe_track(
-                                    world.vehicle,
-                                    world_settings.track
-                                );
-
                         controls = apex::simulation::drive_automatically(
-                            observation,
-                            world_settings.vehicle,
-                            world_settings.track,
-                            driver_settings
-                        );
+                            world.vehicle, world_settings.vehicle, world_settings.track, driver_settings);
                     }
 
                     apex::simulation::step_world(

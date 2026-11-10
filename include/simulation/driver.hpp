@@ -8,9 +8,13 @@ namespace apex::simulation {
         double speed_gain{4.0};
         double heading_gain{1.5};
         double centerline_gain{3.0};
+        double lookahead_distance{0.30};
     };
 
     [[nodiscard]] VehicleControls drive_automatically(
         const TrackObservation &observation, const VehicleSettings &vehicle, const TrackSettings &track,
         const DriverSettings &driver);
+
+    [[nodiscard]] VehicleControls drive_automatically(const VehicleState &state, const VehicleSettings &vehicle,
+                                                      const TrackSettings &track, const DriverSettings &driver);
 }
