@@ -12,6 +12,7 @@
 #include <cmath>
 #include <numbers>
 #include <vector>
+#include <limits>
 
 #include "graphics/tree_mesh.hpp"
 #include "graphics/barrier_mesh.hpp"
@@ -62,11 +63,13 @@ namespace apex::graphics {
             void main() {
             }
         )glsl";
+
         constexpr char vertex_shader_source[] = R"glsl(
             #version 330 core
 
             layout(location = 0) in vec3 position;
             layout(location = 1) in vec3 vertex_color;
+            layout(location = 2) in vec2 road_coordinates;
 
             uniform vec2 offset;
             uniform float heading;
@@ -75,6 +78,7 @@ namespace apex::graphics {
 
             out vec3 surface_position;
             out vec3 surface_color;
+            out vec2 surface_road_coordinates;
 
             void main() {
                 float c = cos(heading);
@@ -92,6 +96,7 @@ namespace apex::graphics {
 
                 surface_position = world_position;
                 surface_color = vertex_color;
+                surface_road_coordinates = road_coordinates;
 
                 gl_Position = view_projection * vec4(world_position, 1.0);
             }
@@ -101,16 +106,18 @@ namespace apex::graphics {
             #version 330 core
 
             in vec3 surface_position;
+            in vec2 surface_road_coordinates;
 
             uniform vec3 color;
             uniform bool curb_pattern;
             uniform bool road_markings_enabled;
-            uniform float track_radius;
             uniform float road_half_width;
             uniform float curb_segments;
 
             uniform bool lighting_enabled;
             uniform vec3 direction_to_light;
+
+            uniform float track_length;
 
             out vec4 fragment_color;
 
@@ -186,27 +193,26 @@ namespace apex::graphics {
                 }
 
                 if (curb_pattern) {
-                    vec2 world_xy = surface_position.xy;
-
-                    float edge_distance =
-                        abs(length(world_xy) - track_radius);
+                    float edge_distance = abs(surface_road_coordinates.y);
 
                     if (edge_distance <= road_half_width) {
                         discard;
                     }
 
-                    const float pi = 3.14159265359;
-
-                    float angle = atan(world_xy.y, world_xy.x) + pi;
-                    float segment = floor(angle * curb_segments / (2.0 * pi));
+                    float segment = floor(
+                        surface_road_coordinates.x * curb_segments / track_length
+                    );
 
                     float stripe = mod(segment, 2.0);
 
-                    base_color = mix(vec3(0.80, 0.07, 0.05),vec3(0.93, 0.91, 0.85),stripe);
+                    base_color = mix(
+                        vec3(0.80, 0.07, 0.05),
+                        vec3(0.93, 0.91, 0.85),
+                        stripe
+                    );
                 }
                 if (road_markings_enabled) {
-                    float distance_from_center =
-                        abs(length(surface_position.xy) - track_radius);
+                    float distance_from_center = abs(surface_road_coordinates.y);
 
                     float line_width = road_half_width * 0.04;
                     float line_inset = road_half_width * 0.03;
@@ -225,15 +231,15 @@ namespace apex::graphics {
                     float cell_size =
                         (road_half_width * 2.0) / column_count;
 
-                    float angle =
-                        atan(surface_position.y, surface_position.x);
+                    float distance_along_track = surface_road_coordinates.x;
 
-                    float distance_along_track = angle * track_radius;
+                    if (distance_along_track > track_length * 0.5) {
+                        distance_along_track -= track_length;
+                    }
 
                     if (abs(distance_along_track) < cell_size) {
                         float distance_across_track =
-                            length(surface_position.xy)
-                            - (track_radius - road_half_width);
+                            surface_road_coordinates.y + road_half_width;
 
                         float column = floor(distance_across_track / cell_size);
                         float row = floor(
@@ -252,16 +258,93 @@ namespace apex::graphics {
         simulation::TrackSettings curb_geometry_settings(const simulation::TrackSettings &track) {
             constexpr double desired_curb_width = 0.025;
 
-            const double inner_radius =
-                    track.centerline_radius - track.road_width * 0.5;
+            double curb_width = desired_curb_width;
 
-            const double curb_width =
-                    std::min(desired_curb_width, inner_radius * 0.5);
+            if (!track.path) {
+                const double inner_radius =
+                        track.centerline_radius - track.road_width * 0.5;
+
+                curb_width = std::min(desired_curb_width, inner_radius * 0.5);
+            }
 
             auto geometry = track;
             geometry.road_width += curb_width * 2.0;
 
             return geometry;
+        }
+
+        float scene_half_extent(const simulation::TrackSettings &track) {
+            constexpr double scenery_margin = 1.0;
+            constexpr double minimum_extent = 3.0;
+
+            const BarrierSettings barriers{};
+            const double wall_offset =
+                    track.road_width * 0.5
+                    + barriers.clearance
+                    + barriers.thickness;
+
+            double extent = track.centerline_radius + wall_offset;
+
+            if (track.path) {
+                const auto boundaries =
+                        simulation::make_track_boundaries(*track.path, wall_offset);
+
+                extent = 0.0;
+
+                for (std::size_t index = 0; index < boundaries.left.size(); ++index) {
+                    const auto &left = boundaries.left[index];
+                    const auto &right = boundaries.right[index];
+
+                    extent = std::max({
+                        extent,
+                        std::abs(left.x),
+                        std::abs(left.y),
+                        std::abs(right.x),
+                        std::abs(right.y)
+                    });
+                }
+            }
+
+            extent = std::max(minimum_extent, extent + scenery_margin);
+
+            if (!std::isfinite(extent) ||
+                extent > std::numeric_limits<float>::max()) {
+                throw std::invalid_argument("Scene exceeds the rendering range");
+            }
+
+            return static_cast<float>(extent);
+        }
+
+        CameraSettings scene_camera_settings(const simulation::TrackSettings &track) {
+            CameraSettings settings{};
+
+            if (track.path) {
+                const float extent = scene_half_extent(track);
+                const float radius = std::sqrt(2.0F) * extent;
+
+                const float half_fov =
+                        glm::radians(settings.vertical_fov_degrees) * 0.5F;
+
+                const float distance =
+                        1.1F * radius / std::sin(half_fov);
+
+                const glm::vec3 direction = glm::normalize(
+                    settings.position - settings.target
+                );
+
+                settings.position =
+                        settings.target + direction * distance;
+
+                settings.maximum_distance = distance * 2.0F;
+                settings.far_clip =
+                        settings.maximum_distance + radius * 2.0F;
+
+                if (!std::isfinite(settings.far_clip)) {
+                    throw std::invalid_argument("Scene exceeds the camera range");
+                }
+            }
+
+            return settings;
         }
 
         struct WindowDeleter {
@@ -311,6 +394,8 @@ namespace apex::graphics {
         ShaderProgram shadow_program;
         ShadowMap shadow_map;
 
+        OrbitCamera camera;
+
         GLint shadow_offset_location{};
         GLint shadow_heading_location{};
         GLint shadow_elevation_location{};
@@ -333,7 +418,6 @@ namespace apex::graphics {
         GLint heading_location{};
         GLint color_location{};
         GLint curb_pattern_location{};
-        GLint track_radius_location{};
         GLint road_half_width_location{};
         GLint curb_segments_location{};
         GLint lighting_enabled_location{};
@@ -342,6 +426,7 @@ namespace apex::graphics {
         GLint shadow_depth_location{};
         GLint scene_light_view_projection_location{};
         GLint road_markings_enabled_location{};
+        GLint track_length_location{};
 
         bool reset_was_pressed{};
         bool pause_was_pressed{};
@@ -356,43 +441,90 @@ namespace apex::graphics {
         double previous_cursor_y{};
         double scroll_delta{};
 
-        OrbitCamera camera{};
 
         explicit Impl(const simulation::TrackSettings &track)
-            : track_settings{track}, track_mesh{track},
-              curb_mesh{curb_geometry_settings(track)}, barrier_mesh{track} {
-            constexpr int tree_count = 16;
-            constexpr float tree_clearance = 0.10F;
-            constexpr float radial_variation = 0.08F;
+            : track_settings{track}, track_mesh{track}, curb_mesh{curb_geometry_settings(track)},
+              ground_mesh{scene_half_extent(track)}, barrier_mesh{track}, camera{scene_camera_settings(track)} {
+            if (track.path) {
+                constexpr double desired_spacing = 0.6;
+                constexpr double tree_clearance = 0.10;
 
-            const BarrierSettings barrier_settings{};
+                const BarrierSettings barriers{};
 
-            const float base_radius =
-                    static_cast<float>(
-                        track.centerline_radius + track.road_width * 0.5
-                    )
-                    + barrier_settings.clearance
-                    + barrier_settings.thickness
-                    + tree_settings.crown_radius
-                    + tree_clearance;
+                const double minimum_offset =
+                        track.road_width * 0.5
+                        + barriers.clearance
+                        + barriers.thickness
+                        + tree_settings.crown_radius
+                        + tree_clearance;
 
-            tree_positions.reserve(tree_count);
-
-            for (int index = 0; index < tree_count; ++index) {
-                const float angle =
-                        2.0F * std::numbers::pi_v<float>
-                        * (static_cast<float>(index) + 0.5F)
-                        / static_cast<float>(tree_count);
-
-                const float radius =
-                        base_radius
-                        + radial_variation * 0.5F
-                        * (1.0F + std::sin(angle * 3.0F));
-
-                tree_positions.emplace_back(
-                    radius * std::cos(angle),
-                    radius * std::sin(angle)
+                const auto tree_count = static_cast<std::size_t>(
+                    std::ceil(track.path->length() / desired_spacing)
                 );
+
+                tree_positions.reserve(tree_count * 2);
+
+                for (std::size_t index = 0; index < tree_count; ++index) {
+                    const double distance =
+                            track.path->length()
+                            * (static_cast<double>(index) + 0.5)
+                            / static_cast<double>(tree_count);
+
+                    const auto sample = track.path->sample_at(distance);
+
+                    const double offset =
+                            minimum_offset
+                            + 0.04 * (
+                                1.0 + std::sin(static_cast<double>(index) * 1.7)
+                            );
+
+                    for (const double side: {-1.0, 1.0}) {
+                        const math::Vec2 position{
+                            sample.position.x - sample.tangent.y * offset * side,
+                            sample.position.y + sample.tangent.x * offset * side
+                        };
+
+                        const auto nearest = track.path->project(position);
+
+                        if (std::abs(nearest.lateral_offset) < minimum_offset) {
+                            continue;
+                        }
+
+                        tree_positions.emplace_back(static_cast<float>(position.x), static_cast<float>(position.y));
+                    }
+                }
+            } else {
+                constexpr int tree_count = 16;
+                constexpr float tree_clearance = 0.10F;
+                constexpr float radial_variation = 0.08F;
+
+                const BarrierSettings barrier_settings{};
+
+                const float base_radius =
+                        static_cast<float>(track.centerline_radius + track.road_width * 0.5)
+                        + barrier_settings.clearance
+                        + barrier_settings.thickness
+                        + tree_settings.crown_radius
+                        + tree_clearance;
+
+                tree_positions.reserve(tree_count);
+
+                for (int index = 0; index < tree_count; ++index) {
+                    const float angle =
+                            2.0F * std::numbers::pi_v<float>
+                            * (static_cast<float>(index) + 0.5F)
+                            / static_cast<float>(tree_count);
+
+                    const float radius =
+                            base_radius
+                            + radial_variation * 0.5F
+                            * (1.0F + std::sin(angle * 3.0F));
+
+                    tree_positions.emplace_back(
+                        radius * std::cos(angle),
+                        radius * std::sin(angle)
+                    );
+                }
             }
             Shader vertex_shader{GL_VERTEX_SHADER};
             vertex_shader.compile(vertex_shader_source);
@@ -423,7 +555,6 @@ namespace apex::graphics {
 
             curb_pattern_location = program.uniform_location("curb_pattern");
             road_markings_enabled_location = program.uniform_location("road_markings_enabled");
-            track_radius_location = program.uniform_location("track_radius");
             road_half_width_location = program.uniform_location("road_half_width");
             curb_segments_location = program.uniform_location("curb_segments");
 
@@ -434,6 +565,8 @@ namespace apex::graphics {
 
             shadow_depth_location = program.uniform_location("shadow_depth");
             scene_light_view_projection_location = program.uniform_location("light_view_projection");
+
+            track_length_location = program.uniform_location("track_length");
 
             glClearColor(0.04F, 0.12F, 0.14F, 1.0F);
             glEnable(GL_DEPTH_TEST);
@@ -618,9 +751,12 @@ namespace apex::graphics {
         const glm::vec3 direction_to_light =
                 glm::normalize(glm::vec3{-0.5F, -0.4F, 1.0F});
 
-        float shadow_extent = std::max(
-            1.0F, static_cast<float>(view.track_settings.centerline_radius + view.track_settings.road_width * 0.5) +
-                  0.3F);
+        float shadow_extent =
+                view.track_settings.path
+                    ? std::sqrt(2.0F) * scene_half_extent(view.track_settings)
+                    : std::max(
+                        1.0F, static_cast<float>(view.track_settings.centerline_radius + view.track_settings.road_width
+                                                 * 0.5) + 0.3F);
 
         const float tree_height = view.tree_settings.trunk_height + view.tree_settings.crown_radius * 1.5F;
 
@@ -670,7 +806,12 @@ namespace apex::graphics {
 
         glUniform1i(view.road_markings_enabled_location, GL_FALSE);
 
-        glUniform1f(view.track_radius_location, static_cast<float>(view.track_settings.centerline_radius));
+        const double track_length = view.track_settings.path
+                                        ? view.track_settings.path->length()
+                                        : 2.0 * std::numbers::pi_v<double>
+                                          * view.track_settings.centerline_radius;
+
+        glUniform1f(view.track_length_location, static_cast<float>(track_length));
         glUniform1f(view.road_half_width_location, static_cast<float>(view.track_settings.road_width * 0.5));
 
         view.shadow_map.bind_texture(0);
@@ -721,7 +862,7 @@ namespace apex::graphics {
 
         glUniform1i(view.curb_pattern_location, GL_FALSE);
         glUniform1f(view.elevation_location, ground_elevation);
-        glUniform3f(view.color_location, 0.68F, 0.65F, 0.53F);
+        glUniform3f(view.color_location, 0.18F, 0.30F, 0.12F);
 
         view.ground_mesh.draw();
 
@@ -733,7 +874,12 @@ namespace apex::graphics {
         glUniform1i(view.road_markings_enabled_location, GL_FALSE);
 
         constexpr float curb_elevation = 0.001F;
-        constexpr float curb_segments = 80.0F;
+        constexpr double desired_stripe_length = 0.05;
+
+        const float curb_segments =
+                view.track_settings.path
+                    ? static_cast<float>(2.0 * std::ceil(track_length / (2.0 * desired_stripe_length)))
+                    : 80.0F;
 
         glUniform1i(view.curb_pattern_location, GL_TRUE);
         glUniform1f(view.curb_segments_location, curb_segments);

@@ -11,6 +11,9 @@ namespace apex::graphics {
         float vertical_fov_degrees{45.0F};
         float near_clip{0.01F};
         float far_clip{20.0F};
+
+        float minimum_distance{0.3F};
+        float maximum_distance{8.0F};
     };
 
     class OrbitCamera {

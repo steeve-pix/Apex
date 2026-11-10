@@ -7,7 +7,9 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <memory>
 
+#include "simulation/circuit_layout.hpp"
 #include "graphics/simulation_window.hpp"
 #include "simulation/driver.hpp"
 #include "simulation/sensors.hpp"
@@ -16,7 +18,10 @@
 
 int main() {
     try {
-        const apex::simulation::WorldSettings world_settings{};
+        apex::simulation::WorldSettings world_settings{};
+
+        world_settings.track.path =
+                std::make_shared<const apex::simulation::TrackPath>(apex::simulation::make_apex_circuit());
         const apex::simulation::SensorSettings sensor_settings{};
         const apex::simulation::DriverSettings driver_settings{};
 
