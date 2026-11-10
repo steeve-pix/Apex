@@ -1,17 +1,24 @@
 #include "simulation/world.hpp"
 
 #include <numbers>
+#include <cmath>
 
 namespace apex::simulation {
     WorldState make_initial_world(const WorldSettings &settings) {
         WorldState world{};
 
-        world.vehicle.body.position = {
-            settings.track.centerline_radius, 0.0
-        };
+        if (settings.track.path) {
+            const auto start = settings.track.path->sample_at(0.0);
 
-        world.vehicle.heading =
-                std::numbers::pi_v<double> / 2.0;
+            world.vehicle.body.position = start.position;
+            world.vehicle.heading = std::atan2(start.tangent.y, start.tangent.x);
+        } else {
+            world.vehicle.body.position = {
+                settings.track.centerline_radius, 0.0
+            };
+            world.vehicle.heading =
+                    std::numbers::pi_v<double> / 2.0;
+        }
 
         return world;
     }
