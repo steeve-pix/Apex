@@ -7,9 +7,6 @@
 
 namespace apex::graphics {
     namespace {
-        constexpr float minimum_distance = 0.3F;
-        constexpr float maximum_distance = 8.0F;
-
         constexpr float minimum_pitch =
                 10.0F * std::numbers::pi_v<float> / 180.0F;
         constexpr float maximum_pitch =
@@ -52,14 +49,18 @@ namespace apex::graphics {
             std::hypot(offset.x, offset.y)
         );
 
+        if (!std::isfinite(settings.minimum_distance) ||
+            !std::isfinite(settings.maximum_distance) ||
+            settings.minimum_distance <= 0.0F ||
+            settings.maximum_distance < settings.minimum_distance) {
+            throw std::invalid_argument("Invalid camera distance limits");
+        }
+
         if (!std::isfinite(distance) ||
-            distance < minimum_distance ||
-            distance > maximum_distance ||
-            pitch < minimum_pitch ||
-            pitch > maximum_pitch) {
-            throw std::invalid_argument(
-                "Initial camera position exceeds orbit limits"
-            );
+            distance < settings.minimum_distance ||
+            distance > settings.maximum_distance ||
+            pitch < minimum_pitch || pitch > maximum_pitch) {
+            throw std::invalid_argument("Initial camera position exceeds orbit limits");
         }
     }
 
@@ -119,11 +120,8 @@ namespace apex::graphics {
             -zoom_sensitivity * std::clamp(amount, -50.0F, 50.0F)
         );
 
-        const float next_distance = std::clamp(
-            distance * scale,
-            minimum_distance,
-            maximum_distance
-        );
+        const float next_distance =
+                std::clamp(distance * scale, settings_.minimum_distance, settings_.maximum_distance);
 
         settings_.position =
                 settings_.target + offset * (next_distance / distance);

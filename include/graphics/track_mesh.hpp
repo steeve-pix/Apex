@@ -26,7 +26,11 @@ namespace apex::graphics {
         struct Vertex {
             float x{};
             float y{};
+            float distance_along{};
+            float lateral_offset{};
         };
+
+        void build_from_boundaries(const simulation::TrackBoundaries &boundaries);
 
         void upload(std::span<const Vertex> vertices);
 
