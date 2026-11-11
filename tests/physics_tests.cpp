@@ -1,11 +1,20 @@
 #include <simulation/body.hpp>
 #include <simulation/vehicle.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <numbers>
+#include <array>
+
+#include "simulation/driver.hpp"
+#include "simulation/race.hpp"
+#include "simulation/sensors.hpp"
+#include "simulation/track.hpp"
+#include "simulation/track_boundaries.hpp"
+#include "simulation/world.hpp"
 
 namespace {
     void expect_near(double actual, double expected, const char *label) {
@@ -20,6 +29,413 @@ namespace {
     void expect(bool condition, const char *message) {
         if (!condition) {
             throw std::runtime_error(message);
+        }
+    }
+
+    void test_circuit_runoff_boundaries() {
+        const auto settings = apex::simulation::make_race_settings();
+        constexpr double barrier_thickness = 0.02;
+        const auto wall_edge = settings.track.road_width * 0.5
+                             + apex::simulation::runoff_width + barrier_thickness;
+        const auto boundaries = apex::simulation::make_track_boundaries(*settings.track.path, wall_edge);
+        expect(boundaries.left.size() == settings.track.path->points().size(),
+               "The circuit must support runoff and barrier offsets");
+    }
+
+    void test_race_car_pace() {
+        using namespace apex::simulation;
+        const auto settings = make_race_settings();
+        constexpr int ticks_per_second = 120;
+        constexpr double dt = 1.0 / ticks_per_second;
+
+        VehicleState straight{};
+        for (int tick = 0; tick < 60 * ticks_per_second; ++tick) {
+            update_vehicle(straight, {.throttle = 1.0}, settings.vehicle, dt);
+        }
+        const double top_speed_kmh = straight.body.velocity.x * race_speed_to_kmh;
+        expect(std::abs(top_speed_kmh - 350.0) < 0.5, "Race car must reach 350 km/h on a long straight");
+
+        for (int tick = 0; tick < 2 * ticks_per_second && straight.body.velocity.x > 1e-9; ++tick) {
+            update_vehicle(straight, {.throttle = -1.0}, settings.vehicle, dt);
+        }
+        expect_near(straight.body.velocity.x, 0.0, "Race brakes must stop the car without overshooting into reverse");
+
+        Race race(settings);
+        double peak_speed = 0.0;
+        for (int tick = 0; tick < 70 * ticks_per_second && race.status().completed_laps == 0; ++tick) {
+            race.step({}, true, dt);
+            expect(race.status().on_track, "Autopilot must brake early enough to stay on Sunset Circuit");
+            peak_speed = std::max(peak_speed, race.status().speed * race_speed_to_kmh);
+        }
+        expect(race.status().completed_laps == 1 && peak_speed > 200.0,
+               "Autopilot must complete a lap at the new race pace");
+    }
+
+    void test_lateral_grip() {
+        using apex::math::Vec2;
+        using apex::simulation::VehicleControls;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::VehicleState;
+        using apex::simulation::update_vehicle;
+
+        VehicleSettings settings{};
+        settings.motion.acceleration_strength = 0.0;
+        settings.motion.linear_drag = 0.0;
+        settings.lateral_grip = 8.0;
+
+        VehicleState initial{};
+        initial.heading = std::numbers::pi_v<double> / 2.0;
+        initial.body.velocity = Vec2{-1.0, 3.0};
+
+        constexpr double dt = 1.0 / 120.0;
+        const VehicleControls no_input{};
+
+        auto gripping = initial;
+
+        update_vehicle(gripping, no_input, settings, dt);
+        expect(gripping.body.velocity.x > -1.0 && gripping.body.velocity.x < 0.0,
+               "Grip must reduce sideways speed without reversing it");
+        expect_near(gripping.body.velocity.y, 3.0, "Grip must preserve forward velocity");
+
+        // Disabling grip must preserve both velocity components.
+        auto grip_disabled = initial;
+        settings.lateral_grip = 0.0;
+
+        update_vehicle(grip_disabled, no_input, settings, dt);
+        expect_near(grip_disabled.body.velocity.x, -1.0, "Zero-grip sideways velocity");
+        expect_near(grip_disabled.body.velocity.y, 3.0, "Zero-grip forward velocity");
+    }
+
+    void test_speed_dependent_steering() {
+        using apex::math::Vec2;
+        using apex::simulation::VehicleControls;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::VehicleState;
+        using apex::simulation::update_vehicle;
+
+        VehicleSettings settings{};
+        settings.wheelbase = 1.0;
+        settings.max_steering_angle =
+                std::numbers::pi_v<double> / 4.0;
+
+        settings.motion.linear_drag = 0.0;
+        settings.lateral_grip = 0.0;
+
+        struct SteeringCase {
+            double speed;
+            double steering;
+            double expected_heading;
+            const char *label;
+        };
+
+        constexpr std::array cases{
+            SteeringCase{0.0, 1.0, 0.0, "Stationary"},
+            SteeringCase{2.0, 1.0, 0.5, "Forward left"},
+            SteeringCase{4.0, 1.0, 1.0, "Double speed"},
+            SteeringCase{-2.0, 1.0, -0.5, "Reverse left"},
+            SteeringCase{2.0, -1.0, -0.5, "Forward right"},
+            SteeringCase{-2.0, -1.0, 0.5, "Reverse right"},
+            SteeringCase{2.0, 3.0, 0.5, "Clamped steering"}
+        };
+
+        for (const auto &test_case: cases) {
+            VehicleState vehicle{};
+            vehicle.body.velocity = Vec2{test_case.speed, 0.0};
+
+            const VehicleControls controls{
+                .steering = test_case.steering
+            };
+
+            update_vehicle(vehicle, controls, settings, 0.25);
+
+            expect_near(
+                vehicle.heading,
+                test_case.expected_heading,
+                test_case.label
+            );
+        }
+    }
+
+    void test_track_boundaries() {
+        using apex::simulation::is_on_track;
+        using apex::simulation::TrackSettings;
+
+        const TrackSettings settings{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        expect(is_on_track({5.0, 0.0}, settings), "Centerline must be on track");
+        expect(is_on_track({4.0, 0.0}, settings), "Inner edge must be on track");
+        expect(is_on_track({6.0, 0.0}, settings), "Outer edge must be on track");
+        expect(!is_on_track({3.99, 0.0}, settings), "Inside the inner edge must be off track");
+        expect(!is_on_track({6.01, 0.0}, settings), "Outside the outer edge must be off track");
+        expect(!is_on_track({0.0, 0.0}, settings), "Track center must be off track");
+        expect(is_on_track({-3.0, -4.0}, settings), "Diagonal position must use radial distance");
+    }
+
+    void test_world() {
+        apex::simulation::WorldSettings settings{};
+        settings.track.centerline_radius = 5.0;
+        settings.track.road_width = 2.0;
+        settings.vehicle.motion.acceleration_strength = 2.0;
+        settings.vehicle.motion.linear_drag = 0.0;
+
+        auto world = apex::simulation::make_initial_world(settings);
+        expect_near(world.vehicle.body.position.x, 5.0, "World spawn x");
+        expect_near(world.vehicle.body.position.y, 0.0, "World spawn y");
+        expect_near(world.vehicle.heading, std::numbers::pi_v<double> / 2.0,
+                    "World spawn heading");
+        expect_near(world.elapsed_time, 0.0, "Initial simulation time");
+
+        const apex::simulation::VehicleControls controls{.throttle = 1.0};
+        apex::simulation::step_world(world, controls, settings, 0.25);
+        expect_near(world.elapsed_time, 0.25, "World step advances time");
+        expect_near(world.vehicle.body.position.y, 0.0625, "World step advances position");
+        expect_near(world.vehicle.body.velocity.y, 0.5, "World step advances velocity");
+
+        world = apex::simulation::make_initial_world(settings);
+        expect_near(world.vehicle.body.position.x, 5.0, "Reset spawn x");
+        expect_near(world.vehicle.body.position.y, 0.0, "Reset spawn y");
+        expect_near(world.vehicle.body.velocity.x, 0.0, "Reset velocity x");
+        expect_near(world.vehicle.body.velocity.y, 0.0, "Reset velocity y");
+        expect_near(world.elapsed_time, 0.0, "Reset simulation time");
+    }
+
+    void test_surface_drag() {
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleSettings;
+        using apex::simulation::vehicle_settings_at;
+
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0,
+            .off_road_drag = 4.0
+        };
+
+        VehicleSettings base{};
+        base.motion.linear_drag = 1.5;
+
+        const auto road = vehicle_settings_at({5.0, 0.0}, base, track);
+        const auto infield = vehicle_settings_at({0.0, 0.0}, base, track);
+        const auto outside = vehicle_settings_at({7.0, 0.0}, base, track);
+        const auto returned = vehicle_settings_at({5.0, 0.0}, base, track);
+
+        expect_near(road.motion.linear_drag, 1.5,
+                    "Road must preserve normal drag");
+        expect_near(infield.motion.linear_drag, 5.5,
+                    "Infield must add surface drag");
+        expect_near(outside.motion.linear_drag, 5.5,
+                    "Outside must add surface drag");
+        expect_near(returned.motion.linear_drag, 1.5,
+                    "Returning to road must restore normal drag");
+        expect_near(base.motion.linear_drag, 1.5,
+                    "Surface selection must not modify base settings");
+
+        expect_near(outside.motion.acceleration_strength,
+                    base.motion.acceleration_strength,
+                    "Surface drag must preserve engine acceleration");
+    }
+
+    void test_track_observation() {
+        using apex::simulation::observe_track;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleState;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{.centerline_radius = 5.0};
+
+        VehicleState vehicle{};
+        vehicle.heading = pi / 2.0;
+
+        vehicle.body.position = {5.0, 0.0};
+        auto observation = observe_track(vehicle, track);
+
+        expect_near(observation.centerline_error, 0.0,
+                    "Centerline error at road center");
+        expect_near(observation.heading_error, 0.0,
+                    "Counterclockwise tangent alignment");
+
+        vehicle.body.position = {6.0, 0.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.centerline_error, 1.0,
+                    "Outside error must be positive");
+
+        vehicle.body.position = {4.0, 0.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.centerline_error, -1.0,
+                    "Inside error must be negative");
+
+        vehicle.body.position = {5.0, 0.0};
+        vehicle.heading = 0.0;
+        observation = observe_track(vehicle, track);
+        expect_near(observation.heading_error, pi / 2.0,
+                    "Desired left turn must be positive");
+
+        vehicle.body.position = {0.0, 5.0};
+        vehicle.heading = -pi + 0.1;
+        observation = observe_track(vehicle, track);
+        expect_near(observation.heading_error, -0.1,
+                    "Heading error must wrap across pi");
+
+        vehicle.heading = pi / 2.0;
+        vehicle.body.velocity = {9.0, -2.0};
+        observation = observe_track(vehicle, track);
+        expect_near(observation.forward_speed, -2.0,
+                    "Forward speed must exclude sideways velocity");
+
+        vehicle.body.position = {0.0, 0.0};
+        bool rejected_origin = false;
+
+        try {
+            const auto unused = observe_track(vehicle, track);
+            (void) unused;
+        } catch (const std::invalid_argument &) {
+            rejected_origin = true;
+        }
+
+        expect(rejected_origin, "Observation must reject undefined heading at origin");
+    }
+
+    void test_automatic_driver() {
+        using apex::simulation::drive_automatically;
+        using apex::simulation::DriverSettings;
+        using apex::simulation::TrackObservation;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleSettings;
+
+        const VehicleSettings vehicle{};
+        const TrackSettings track{};
+        const DriverSettings driver{};
+
+        const auto controls_for = [&](const TrackObservation &observation) {
+            return drive_automatically(observation, vehicle, track, driver);
+        };
+
+        const auto centered = controls_for(TrackObservation{});
+
+        expect(centered.steering > 0.0 && centered.steering < 1.0,
+               "Circular track must require left steering");
+        expect_near(centered.throttle, 1.0,
+                    "Initial throttle must clamp to full power");
+
+        const auto outside = controls_for(
+            TrackObservation{.centerline_error = 0.02}
+        );
+        const auto inside = controls_for(
+            TrackObservation{.centerline_error = -0.02}
+        );
+
+        expect(outside.steering > centered.steering,
+               "Outside position must increase left steering");
+        expect(inside.steering < centered.steering,
+               "Inside position must reduce left steering");
+
+        const auto left = controls_for(
+            TrackObservation{.heading_error = 10.0}
+        );
+        const auto right = controls_for(
+            TrackObservation{.heading_error = -10.0}
+        );
+
+        expect_near(left.steering, 1.0, "Left steering limit");
+        expect_near(right.steering, -1.0, "Right steering limit");
+
+        const auto fast = controls_for(
+            TrackObservation{.forward_speed = driver.target_speed + 0.1}
+        );
+
+        expect_near(fast.throttle, 0.0,
+                    "Above target speed must release throttle");
+    }
+
+    void test_track_rays() {
+        using apex::math::Vec2;
+        using apex::simulation::cast_track_ray;
+        using apex::simulation::TrackSettings;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        struct RayCase {
+            Vec2 origin;
+            double angle{};
+            double range{};
+            double expected_distance{};
+            bool expected_hit{};
+            const char *label{};
+        };
+
+        const std::array cases{
+            RayCase{{5.0, 0.0}, 0.0, 10.0, 1.0, true, "Outward"},
+            RayCase{{5.0, 0.0}, pi, 10.0, 1.0, true, "Inward"},
+            RayCase{
+                {5.0, 0.0}, pi / 2.0, 10.0,
+                std::sqrt(11.0), true, "Along road"
+            },
+            RayCase{{5.0, 0.0}, 0.0, 0.5, 0.5, false, "Beyond range"},
+            RayCase{{5.0, 0.0}, 0.0, 1.0, 1.0, true, "At range limit"},
+            RayCase{{7.0, 0.0}, 0.0, 10.0, 10.0, false, "Behind ray"},
+            RayCase{{-3.0, 4.0}, 0.0, 10.0, 3.0, true, "Tangent"}
+        };
+
+        for (const auto &test_case: cases) {
+            const auto reading = cast_track_ray(test_case.origin, test_case.angle, track, test_case.range);
+
+            expect(reading.hit == test_case.expected_hit, test_case.label);
+            expect_near(reading.distance, test_case.expected_distance, test_case.label);
+        }
+    }
+
+    void test_sensor_fan() {
+        using apex::simulation::sense_track;
+        using apex::simulation::SensorSettings;
+        using apex::simulation::TrackSettings;
+        using apex::simulation::VehicleState;
+
+        constexpr double pi = std::numbers::pi_v<double>;
+        const TrackSettings track{
+            .centerline_radius = 5.0,
+            .road_width = 2.0
+        };
+
+        SensorSettings sensors{};
+        sensors.max_distance = 10.0;
+
+        VehicleState vehicle{};
+        vehicle.body.position = {5.0, 0.0};
+        vehicle.heading = pi / 2.0;
+
+        const auto initial = sense_track(vehicle, track, sensors);
+
+        expect(initial[0].hit && initial[3].hit && initial[6].hit,
+               "Right, forward, and left sensors must hit");
+        expect_near(initial[0].distance, 1.0, "Right sensor");
+        expect_near(initial[3].distance, std::sqrt(11.0), "Forward sensor");
+        expect_near(initial[6].distance, 1.0, "Left sensor");
+
+        // Rotate both position and heading by a quarter turn.
+        vehicle.body.position = {0.0, 5.0};
+        vehicle.heading = pi;
+
+        const auto rotated = sense_track(vehicle, track, sensors);
+
+        for (std::size_t i = 0; i < rotated.size(); ++i) {
+            expect(rotated[i].hit == initial[i].hit,
+                   "Rotation must preserve sensor hit status");
+            expect_near(rotated[i].distance, initial[i].distance,
+                        "Rotation must preserve sensor distance");
+        }
+
+        sensors.max_distance = 0.25;
+        const auto limited = sense_track(vehicle, track, sensors);
+
+        for (const auto &reading: limited) {
+            expect(!reading.hit, "Short-range sensor must not reach an edge");
+            expect_near(reading.distance, 0.25, "Sensor range limit");
         }
     }
 }
@@ -99,12 +515,15 @@ int main() {
         expect_near(resting.velocity.y, 0.0, "Resting velocity y");
 
         VehicleSettings vehicle_settings{};
-        vehicle_settings.turn_rate = 2.0;
+        vehicle_settings.wheelbase = 1.0;
+        vehicle_settings.max_steering_angle =
+                std::numbers::pi_v<double> / 4.0;
         vehicle_settings.motion.acceleration_strength = 2.0;
         vehicle_settings.motion.linear_drag = 0.0;
 
         // Two radians per second for a quarter second gives 0.5 radians.
         VehicleState turning{};
+        turning.body.velocity = Vec2{2.0, 0.0};
         const VehicleControls turn_left{.steering = 1.0};
 
         update_vehicle(turning, turn_left, vehicle_settings, 0.25);
@@ -116,11 +535,7 @@ int main() {
 
         update_vehicle(turning, turn_left, vehicle_settings, 0.0);
 
-        expect_near(
-            turning.heading,
-            previous_heading,
-            "Zero-time steering"
-        );
+        expect_near(turning.heading, previous_heading, "Zero-time steering");
 
         // Facing upward must produce upward acceleration.
         VehicleState accelerating{};
@@ -134,6 +549,24 @@ int main() {
         expect_near(accelerating.body.velocity.y, 1.0, "Forward velocity y");
         expect_near(accelerating.body.position.x, 0.0, "Forward position x");
         expect_near(accelerating.body.position.y, 0.25, "Forward position y");
+
+        VehicleState parked{};
+
+        update_vehicle(parked, turn_left, vehicle_settings, 0.25);
+
+        expect_near(parked.heading, 0.0, "Stationary steering must not rotate the vehicle");
+
+        test_lateral_grip();
+        test_speed_dependent_steering();
+        test_track_boundaries();
+        test_circuit_runoff_boundaries();
+        test_race_car_pace();
+        test_surface_drag();
+        test_world();
+        test_track_observation();
+        test_automatic_driver();
+        test_track_rays();
+        test_sensor_fan();
 
         std::cout << "Physics checks passed.\n";
 

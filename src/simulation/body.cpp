@@ -1,5 +1,7 @@
 #include "simulation/body.hpp"
 
+#include <cmath>
+
 namespace apex::simulation {
     void integrate(Body2D &body, const math::Vec2 &acceleration, double dt) {
         const double half_dt_squared =
@@ -16,9 +18,11 @@ namespace apex::simulation {
     }
 
     void update_body(Body2D &body, const math::Vec2 &direction, const MotionSettings &settings, double dt) {
+        const double drag = settings.quadratic_drag == 0.0 ? settings.linear_drag
+                          : settings.drag_at_speed(std::hypot(body.velocity.x, body.velocity.y));
         const math::Vec2 acceleration{
-            direction.x * settings.acceleration_strength - body.velocity.x * settings.linear_drag,
-            direction.y * settings.acceleration_strength - body.velocity.y * settings.linear_drag
+            direction.x * settings.acceleration_strength - body.velocity.x * drag,
+            direction.y * settings.acceleration_strength - body.velocity.y * drag
         };
         integrate(body, acceleration, dt);
     }
