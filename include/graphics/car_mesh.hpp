@@ -5,6 +5,9 @@
 namespace apex::graphics {
     class CarMesh {
     public:
+        static constexpr float front_tire_radius = .0224F;
+        static constexpr float rear_tire_radius = .0236F;
+
         CarMesh();
 
         ~CarMesh();

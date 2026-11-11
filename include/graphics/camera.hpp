@@ -25,6 +25,8 @@ namespace apex::graphics {
 
         void zoom(float amount);
 
+        void set_distance(float distance);
+
         void reset();
 
         void set_target(glm::vec3 target);

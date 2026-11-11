@@ -53,6 +53,7 @@ add_library(apex_simulation STATIC
         src/simulation/vehicle.cpp
         src/simulation/track.cpp
         src/simulation/world.cpp
+        src/simulation/race.cpp
         src/simulation/driver.cpp
         src/simulation/sensors.cpp
         src/simulation/track_path.cpp
@@ -75,6 +76,9 @@ add_library(apex_graphics STATIC
         src/graphics/ground_mesh.cpp
         src/graphics/barrier_mesh.cpp
         src/graphics/car_mesh.cpp
+        src/graphics/race_scenery.cpp
+        src/graphics/race_hud.cpp
+        src/graphics/scene_compositor.cpp
         src/graphics/camera.cpp
         src/graphics/shadow_map.cpp
         src/graphics/tree_mesh.cpp

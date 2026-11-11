@@ -13,6 +13,8 @@ namespace apex::graphics {
 
         ShadowMap &operator=(const ShadowMap &) = delete;
 
+        [[nodiscard]] int resolution() const noexcept { return resolution_; }
+
         void bind_for_writing() const;
 
         void bind_texture(GLuint texture_unit = 0) const;

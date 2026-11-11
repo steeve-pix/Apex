@@ -8,6 +8,9 @@ namespace apex::graphics {
         float trunk_radius{0.012F};
         float crown_radius{0.07F};
         int segment_count{8};
+        float crown_height_scale{1.0F};
+        bool branching{};
+        bool conifer{};
     };
 
     class TreeMesh {

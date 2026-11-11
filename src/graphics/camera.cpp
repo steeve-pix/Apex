@@ -123,8 +123,23 @@ namespace apex::graphics {
         const float next_distance =
                 std::clamp(distance * scale, settings_.minimum_distance, settings_.maximum_distance);
 
+        set_distance(next_distance);
+    }
+
+    void OrbitCamera::set_distance(float distance) {
+        if (!std::isfinite(distance) ||
+            distance < settings_.minimum_distance ||
+            distance > settings_.maximum_distance) {
+            throw std::invalid_argument("Camera distance exceeds orbit limits");
+        }
+
+        const auto offset = settings_.position - settings_.target;
+
+        const float current_distance =
+                std::hypot(offset.x, offset.y, offset.z);
+
         settings_.position =
-                settings_.target + offset * (next_distance / distance);
+                settings_.target + offset * (distance / current_distance);
     }
 
     void OrbitCamera::reset() {
