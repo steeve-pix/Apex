@@ -28,6 +28,7 @@ namespace apex::graphics {
             float y{};
             float distance_along{};
             float lateral_offset{};
+            float bend{};
         };
 
         void build_from_boundaries(const simulation::TrackBoundaries &boundaries);

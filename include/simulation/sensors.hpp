@@ -12,14 +12,16 @@ namespace apex::simulation {
         bool hit{};
     };
 
-    inline constexpr std::size_t sensor_count = 5;
+    inline constexpr std::size_t sensor_count = 7;
 
     struct SensorSettings {
         std::array<double, sensor_count> angle_offset{
             -std::numbers::pi_v<double> / 2.0,
-            -std::numbers::pi_v<double> / 4.0,
+            -std::numbers::pi_v<double> / 3.0,
+            -std::numbers::pi_v<double> / 6.0,
             0.0,
-            std::numbers::pi_v<double> / 4.0,
+            std::numbers::pi_v<double> / 6.0,
+            std::numbers::pi_v<double> / 3.0,
             std::numbers::pi_v<double> / 2.0,
         };
 

@@ -6,30 +6,11 @@ from pathlib import Path
 import apex_core
 
 from analyze_trajectory import SENSOR_COUNT
+from python.agent import observe_inputs
 from saved_driver import load_driver, predict_controls
 from training_data import SENSOR_FIELDS, build_input_features
 
 
-def observe_inputs(world: apex_core.WorldState, settings: apex_core.WorldSettings, sensors: apex_core.SensorSettings) -> \
-        list[float]:
-    readings = apex_core.sense_track(world.vehicle, settings.track, sensors)
-
-    if len(readings) != SENSOR_COUNT:
-        raise ValueError("Simulation sensor count is incompatible")
-
-    body = world.vehicle.body
-
-    sample = {
-        "vx": body.velocity.x,
-        "vy": body.velocity.y,
-        "heading": world.vehicle.heading,
-    }
-
-    for index, reading in enumerate(readings):
-        sample[f"sensor_{index}_distance"] = reading.distance
-        sample[f"sensor_{index}_hit"] = float(reading.hit)
-
-    return build_input_features(sample)
 
 
 def failure_reason(world: apex_core.WorldState, settings: apex_core.WorldSettings) -> str | None:

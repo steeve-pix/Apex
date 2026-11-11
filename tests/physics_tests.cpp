@@ -1,6 +1,7 @@
 #include <simulation/body.hpp>
 #include <simulation/vehicle.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -9,8 +10,10 @@
 #include <array>
 
 #include "simulation/driver.hpp"
+#include "simulation/race.hpp"
 #include "simulation/sensors.hpp"
 #include "simulation/track.hpp"
+#include "simulation/track_boundaries.hpp"
 #include "simulation/world.hpp"
 
 namespace {
@@ -27,6 +30,45 @@ namespace {
         if (!condition) {
             throw std::runtime_error(message);
         }
+    }
+
+    void test_circuit_runoff_boundaries() {
+        const auto settings = apex::simulation::make_race_settings();
+        constexpr double barrier_thickness = 0.02;
+        const auto wall_edge = settings.track.road_width * 0.5
+                             + apex::simulation::runoff_width + barrier_thickness;
+        const auto boundaries = apex::simulation::make_track_boundaries(*settings.track.path, wall_edge);
+        expect(boundaries.left.size() == settings.track.path->points().size(),
+               "The circuit must support runoff and barrier offsets");
+    }
+
+    void test_race_car_pace() {
+        using namespace apex::simulation;
+        const auto settings = make_race_settings();
+        constexpr int ticks_per_second = 120;
+        constexpr double dt = 1.0 / ticks_per_second;
+
+        VehicleState straight{};
+        for (int tick = 0; tick < 60 * ticks_per_second; ++tick) {
+            update_vehicle(straight, {.throttle = 1.0}, settings.vehicle, dt);
+        }
+        const double top_speed_kmh = straight.body.velocity.x * race_speed_to_kmh;
+        expect(std::abs(top_speed_kmh - 350.0) < 0.5, "Race car must reach 350 km/h on a long straight");
+
+        for (int tick = 0; tick < 2 * ticks_per_second && straight.body.velocity.x > 1e-9; ++tick) {
+            update_vehicle(straight, {.throttle = -1.0}, settings.vehicle, dt);
+        }
+        expect_near(straight.body.velocity.x, 0.0, "Race brakes must stop the car without overshooting into reverse");
+
+        Race race(settings);
+        double peak_speed = 0.0;
+        for (int tick = 0; tick < 70 * ticks_per_second && race.status().completed_laps == 0; ++tick) {
+            race.step({}, true, dt);
+            expect(race.status().on_track, "Autopilot must brake early enough to stay on Sunset Circuit");
+            peak_speed = std::max(peak_speed, race.status().speed * race_speed_to_kmh);
+        }
+        expect(race.status().completed_laps == 1 && peak_speed > 200.0,
+               "Autopilot must complete a lap at the new race pace");
     }
 
     void test_lateral_grip() {
@@ -369,11 +411,11 @@ namespace {
 
         const auto initial = sense_track(vehicle, track, sensors);
 
-        expect(initial[0].hit && initial[2].hit && initial[4].hit,
+        expect(initial[0].hit && initial[3].hit && initial[6].hit,
                "Right, forward, and left sensors must hit");
         expect_near(initial[0].distance, 1.0, "Right sensor");
-        expect_near(initial[2].distance, std::sqrt(11.0), "Forward sensor");
-        expect_near(initial[4].distance, 1.0, "Left sensor");
+        expect_near(initial[3].distance, std::sqrt(11.0), "Forward sensor");
+        expect_near(initial[6].distance, 1.0, "Left sensor");
 
         // Rotate both position and heading by a quarter turn.
         vehicle.body.position = {0.0, 5.0};
@@ -517,6 +559,8 @@ int main() {
         test_lateral_grip();
         test_speed_dependent_steering();
         test_track_boundaries();
+        test_circuit_runoff_boundaries();
+        test_race_car_pace();
         test_surface_drag();
         test_world();
         test_track_observation();

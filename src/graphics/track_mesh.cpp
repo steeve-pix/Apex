@@ -134,6 +134,10 @@ namespace apex::graphics {
             }
 
             const auto tangent = centerline.sample_at(distance_along).tangent;
+            const auto entry = centerline.sample_at(distance_along - 0.58).tangent;
+            const auto exit = centerline.sample_at(distance_along + 0.58).tangent;
+            const auto bend = std::atan2(entry.x * exit.y - entry.y * exit.x,
+                                         entry.x * exit.x + entry.y * exit.y);
 
             for (const auto &point: {boundaries.right[point_index], boundaries.left[point_index]}) {
                 const double lateral_offset =
@@ -147,7 +151,7 @@ namespace apex::graphics {
 
                 vertices.push_back({
                     static_cast<float>(point.x), static_cast<float>(point.y), static_cast<float>(distance_along),
-                    static_cast<float>(lateral_offset)
+                    static_cast<float>(lateral_offset), static_cast<float>(bend)
                 });
             }
         }
@@ -184,7 +188,7 @@ namespace apex::graphics {
         glVertexAttribPointer(0, 2,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)), nullptr);
         glEnableVertexAttribArray(0);
 
-        glVertexAttribPointer(2, 2,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)),
+        glVertexAttribPointer(2, 3,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)),
                               reinterpret_cast<const void *>(offsetof(Vertex, distance_along)));
         glEnableVertexAttribArray(2);
 
