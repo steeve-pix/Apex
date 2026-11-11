@@ -23,8 +23,14 @@ namespace apex::simulation {
                 vehicle.body.velocity.x * previous_forward.x +
                 vehicle.body.velocity.y * previous_forward.y;
 
-        const double steering_angle =
+        double steering_angle =
                 std::clamp(controls.steering, -1.0, 1.0) * settings.max_steering_angle;
+        if (settings.lateral_acceleration_limit > 0.0 && forward_speed != 0.0) {
+            const double cornering_lock = std::atan(settings.lateral_acceleration_limit * settings.wheelbase
+                                                  / (forward_speed * forward_speed));
+            steering_angle = std::clamp(steering_angle, -cornering_lock, cornering_lock);
+        }
+        vehicle.steering_angle = steering_angle;
 
         const double yaw_rate =
                 forward_speed / settings.wheelbase * std::tan(steering_angle);
@@ -33,12 +39,25 @@ namespace apex::simulation {
 
         const math::Vec2 forward{std::cos(vehicle.heading), std::sin(vehicle.heading)};
 
-        const math::Vec2 thrust_direction{
-            forward.x * controls.throttle,
-            forward.y * controls.throttle
-        };
+        auto motion = settings.motion;
+        double throttle = controls.throttle;
+        if (throttle < 0.0 && settings.braking_strength > 0.0) {
+            if (forward_speed > 0.0 && dt > 0.0) {
+                const double speed = std::hypot(vehicle.body.velocity.x, vehicle.body.velocity.y);
+                const double stopping_force = std::max(0.0, forward_speed * (1.0 / dt - motion.drag_at_speed(speed)));
+                motion.acceleration_strength = std::min(-throttle * settings.braking_strength, stopping_force);
+                throttle = -1.0;
+            } else {
+                constexpr double reverse_speed = 0.65;
+                throttle *= 0.35 * std::clamp(1.0 + forward_speed / reverse_speed, 0.0, 1.0);
+            }
+        }
+        const math::Vec2 thrust_direction{forward.x * throttle, forward.y * throttle};
 
-        update_body(vehicle.body, thrust_direction, settings.motion, dt);
+        const auto previous_position = vehicle.body.position;
+        update_body(vehicle.body, thrust_direction, motion, dt);
+        vehicle.forward_travel += (vehicle.body.position.x - previous_position.x) * forward.x
+                                  + (vehicle.body.position.y - previous_position.y) * forward.y;
 
         const math::Vec2 sideways{-forward.y, forward.x};
 

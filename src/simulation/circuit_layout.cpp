@@ -39,31 +39,52 @@ namespace apex::simulation {
             math::Vec2{0.80, -1.40},
             math::Vec2{1.80, -1.40},
 
-            // Hairpin.
-            math::Vec2{2.30, -1.10},
-            math::Vec2{2.35, -0.60},
-            math::Vec2{2.00, -0.20},
-            math::Vec2{1.25, -0.15},
+            // Brake into a tightening left and exit diagonally across the infield.
+            math::Vec2{2.66, -1.34},
+            math::Vec2{3.08, -1.02},
+            math::Vec2{3.04, -0.62},
+            math::Vec2{2.62, -0.42},
+            math::Vec2{1.88, -0.46},
+            math::Vec2{1.11, -0.25},
 
-            // S-bends.
-            math::Vec2{0.70, 0.30},
-            math::Vec2{1.05, 0.90},
-            math::Vec2{1.75, 1.25},
-            math::Vec2{1.80, 1.80},
+            // A fast infield exit leads into a right-left chicane on the outer sweep.
+            math::Vec2{0.87, 0.16},
+            math::Vec2{1.10, 0.51},
+            math::Vec2{1.72, 0.59},
+            math::Vec2{2.31, 0.75},
+            math::Vec2{2.48, 1.06},
+            math::Vec2{2.52, 1.38},
+            math::Vec2{2.70, 1.64},
+            math::Vec2{2.78, 1.96},
+            math::Vec2{2.54, 2.27},
+            math::Vec2{1.95, 2.36},
+            math::Vec2{1.39, 2.37},
+            math::Vec2{0.73, 2.23},
 
-            // Sweeping return.
-            math::Vec2{1.10, 2.15},
-            math::Vec2{0.20, 2.10},
-            math::Vec2{-0.55, 1.80},
-            math::Vec2{-0.60, 1.10},
-            math::Vec2{-1.20, 0.65},
-            math::Vec2{-1.80, 1.00},
-            math::Vec2{-2.30, 0.90},
-            math::Vec2{-2.45, 0.25},
-            math::Vec2{-2.30, -0.60}
+            // A late-apex infield hairpin feeds another change of direction.
+            math::Vec2{0.32, 1.86},
+            math::Vec2{0.26, 1.32},
+            math::Vec2{-0.07, 1.01},
+            math::Vec2{-0.47, 1.13},
+            math::Vec2{-0.63, 1.61},
+            math::Vec2{-0.99, 2.13},
+            math::Vec2{-1.56, 2.36},
+            math::Vec2{-2.20, 2.17},
+            math::Vec2{-2.61, 1.70},
+
+            // Offset esses and a slow final corner back onto the grid straight.
+            math::Vec2{-2.64, 1.16},
+            math::Vec2{-2.25, 0.77},
+            math::Vec2{-1.78, 0.65},
+            math::Vec2{-1.54, 0.28},
+            math::Vec2{-1.78, -0.10},
+            math::Vec2{-2.31, -0.23},
+            math::Vec2{-2.69, -0.59},
+            math::Vec2{-2.55, -1.10},
+            math::Vec2{-2.22, -1.36}
         };
 
-        constexpr double layout_scale = 3.0;
+        constexpr double layout_scale = 3.85;
         std::vector<math::Vec2> points;
         points.reserve(control_points.size() * static_cast<std::size_t>(samples_per_section));
 
