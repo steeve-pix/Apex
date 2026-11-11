@@ -71,6 +71,7 @@ Testing/
 
 # Python
 .venv/
+.apex/
 __pycache__/
 *.py[cod]
 

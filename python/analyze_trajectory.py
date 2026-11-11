@@ -3,7 +3,7 @@ import csv
 import math
 from pathlib import Path
 
-SENSOR_COUNT = 5
+SENSOR_COUNT = 7
 
 
 def load_trajectory(path: Path) -> list[dict[str, float]]:
@@ -26,8 +26,7 @@ def load_trajectory(path: Path) -> list[dict[str, float]]:
         }
 
         if present_sensor_columns and present_sensor_columns != sensor_columns:
-            raise ValueError("CSV must contain all five sensor distance/hit pairs")
-
+            raise ValueError(f"CSV must contain all {SENSOR_COUNT} sensor distance/hit pairs")
         control_columns = {"throttle", "steering"}
         present_control_columns = control_columns.intersection(reader.fieldnames)
 
