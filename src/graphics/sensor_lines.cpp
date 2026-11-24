@@ -9,10 +9,11 @@ namespace apex::graphics {
         struct Vertex {
             float x;
             float y;
+            float z;
         };
 
-        using LineVertices =
-        std::array<Vertex, simulation::sensor_count * 2>;
+        constexpr std::size_t subdivisions = 12;
+        using LineVertices = std::array<Vertex, simulation::sensor_count * subdivisions * 2>;
     }
 
     SensorLines::SensorLines() {
@@ -34,7 +35,7 @@ namespace apex::graphics {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(LineVertices{}.size() * sizeof(Vertex)), nullptr,
                      GL_DYNAMIC_DRAW);
 
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)), nullptr);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)), nullptr);
         glEnableVertexAttribArray(0);
 
         glBindVertexArray(0);
@@ -47,23 +48,27 @@ namespace apex::graphics {
     }
 
     void SensorLines::update(const simulation::VehicleState &vehicle, const simulation::SensorSettings &sensors,
-                             const simulation::SensorReadings &readings) const {
+                             const simulation::SensorReadings &readings, const simulation::TrackPath *path) const {
         LineVertices vertices{};
         const auto &origin = vehicle.body.position;
-
+        const bool elevated = path && path->has_elevation();
+        const auto vertex_at = [&](const math::Vec2 &point) -> Vertex {
+            const double height = elevated ? path->elevation_at(path->project(point).distance_along_track).height : 0.0;
+            return {static_cast<float>(point.x), static_cast<float>(point.y), static_cast<float>(height)};
+        };
+        const auto start = vertex_at(origin);
+        std::size_t index = 0;
         for (std::size_t i = 0; i < readings.size(); ++i) {
-            const double angle =
-                    vehicle.heading + sensors.angle_offset[i];
-
-            vertices[i * 2] = {
-                static_cast<float>(origin.x),
-                static_cast<float>(origin.y)
-            };
-
-            vertices[i * 2 + 1] = {
-                static_cast<float>(origin.x + std::cos(angle) * readings[i].distance),
-                static_cast<float>(origin.y + std::sin(angle) * readings[i].distance)
-            };
+            const double angle = vehicle.heading + sensors.angle_offset[i];
+            const double dx = std::cos(angle) * readings[i].distance / subdivisions;
+            const double dy = std::sin(angle) * readings[i].distance / subdivisions;
+            auto previous = start;
+            for (std::size_t step = 1; step <= subdivisions; ++step) {
+                const auto next = vertex_at({origin.x + dx * step, origin.y + dy * step});
+                vertices[index++] = previous;
+                vertices[index++] = next;
+                previous = next;
+            }
         }
 
         glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);

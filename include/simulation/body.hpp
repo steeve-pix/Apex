@@ -16,6 +16,7 @@ namespace apex::simulation {
     };
     void integrate(Body2D &body, const math::Vec2 &acceleration, double dt);
 
-    void update_body(Body2D& body, const math::Vec2 &direction,const MotionSettings &settings,double dt);
+    void update_body(Body2D &body, const math::Vec2 &direction, const MotionSettings &settings, double dt,
+                     math::Vec2 external_acceleration = {});
 
 }

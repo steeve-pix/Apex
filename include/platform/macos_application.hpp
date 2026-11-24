@@ -3,5 +3,7 @@
 #include <string>
 
 namespace apex::platform {
-    void set_application_icon(const std::string& path);
+    void set_application_icon(const std::string &path);
+
+    void set_application_name(const std::string &name);
 }

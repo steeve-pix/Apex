@@ -12,7 +12,8 @@
 namespace apex::graphics {
     TrackMesh::TrackMesh(const simulation::TrackSettings &settings, int segment_count) {
         if (settings.path) {
-            build_from_boundaries(simulation::make_track_boundaries(*settings.path, settings.road_width * 0.5));
+            build_from_boundaries(simulation::make_track_boundaries(*settings.path, settings.road_width * 0.5),
+                                  settings.path.get());
 
             return;
         }
@@ -61,12 +62,12 @@ namespace apex::graphics {
             }
 
             vertices.push_back({
-                static_cast<float>(outer_radius * x), static_cast<float>(outer_radius * y),
+                static_cast<float>(outer_radius * x), static_cast<float>(outer_radius * y), 0.0F,
                 static_cast<float>(distance_along), static_cast<float>(half_width)
             });
 
             vertices.push_back({
-                static_cast<float>(inner_radius * x), static_cast<float>(inner_radius * y),
+                static_cast<float>(inner_radius * x), static_cast<float>(inner_radius * y), 0.0F,
                 static_cast<float>(distance_along), static_cast<float>(-half_width)
             });
         }
@@ -78,7 +79,8 @@ namespace apex::graphics {
         build_from_boundaries(boundaries);
     }
 
-    void TrackMesh::build_from_boundaries(const simulation::TrackBoundaries &boundaries) {
+    void TrackMesh::build_from_boundaries(const simulation::TrackBoundaries &boundaries,
+                                          const simulation::TrackPath *path) {
         const std::size_t point_count = boundaries.left.size();
 
         if (point_count < 3 || boundaries.right.size() != point_count) {
@@ -134,11 +136,10 @@ namespace apex::graphics {
             }
 
             const auto tangent = centerline.sample_at(distance_along).tangent;
-            const auto entry = centerline.sample_at(distance_along - 0.58).tangent;
-            const auto exit = centerline.sample_at(distance_along + 0.58).tangent;
-            const auto bend = std::atan2(entry.x * exit.y - entry.y * exit.x,
-                                         entry.x * exit.x + entry.y * exit.y);
+            const auto bend = centerline.bend_at(distance_along);
 
+            const float height = path ? static_cast<float>(path->elevation_at(path->distance_at_point(index)).height)
+                                      : 0.0F;
             for (const auto &point: {boundaries.right[point_index], boundaries.left[point_index]}) {
                 const double lateral_offset =
                         (point.x - center.x) * tangent.y
@@ -150,7 +151,8 @@ namespace apex::graphics {
                 }
 
                 vertices.push_back({
-                    static_cast<float>(point.x), static_cast<float>(point.y), static_cast<float>(distance_along),
+                    static_cast<float>(point.x), static_cast<float>(point.y), height,
+                    static_cast<float>(distance_along),
                     static_cast<float>(lateral_offset), static_cast<float>(bend)
                 });
             }
@@ -185,7 +187,7 @@ namespace apex::graphics {
 
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size_bytes()), vertices.data(),GL_STATIC_DRAW);
 
-        glVertexAttribPointer(0, 2,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)), nullptr);
+        glVertexAttribPointer(0, 3,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)), nullptr);
         glEnableVertexAttribArray(0);
 
         glVertexAttribPointer(2, 3,GL_FLOAT,GL_FALSE, static_cast<GLsizei>(sizeof(Vertex)),
