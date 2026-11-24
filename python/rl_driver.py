@@ -24,11 +24,11 @@ class RLDriver(nn.Module):
         self.optimizer = torch.optim.Adam(self.parameters(), lr=0.0003)
 
     def forward(self, observation: list[float]):
-        inputs = torch.tensor(observation, dtype=torch.float32)
+        inputs = torch.as_tensor(observation, dtype=torch.float32)
         features = self.features(inputs)
         return self.actor(features), self.critic(features).squeeze(-1)
 
-    def sample_action(self, observation: list[float], *, greedy: bool = False):
+    def sample_action(self, observation: list[float], *, greedy: bool = False, return_index: bool = False, ):
         logits, value = self(observation)
         policy = Categorical(logits=logits)
         choice = logits.argmax() if greedy else policy.sample()
@@ -40,7 +40,12 @@ class RLDriver(nn.Module):
             forward_speed = observation[-2]
             action.throttle = -min(1.0, 0.46 * max(0.0, forward_speed))
 
-        return action, policy.log_prob(choice), value, policy.entropy()
+        result = (action, policy.log_prob(choice), value, policy.entropy())
+
+        if return_index:
+            return *result, choice.item()
+
+        return result
 
     def learn(self, log_prob, value, entropy, reward, next_observation):
         with torch.no_grad():
@@ -58,3 +63,10 @@ class RLDriver(nn.Module):
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
+
+    def evaluate_actions(self, observations, action_indices):
+        logits, values = self(observations)
+        policy = Categorical(logits=logits)
+        action_indices = torch.as_tensor(action_indices, dtype=torch.long)
+
+        return policy.log_prob(action_indices), values, policy.entropy()

@@ -88,9 +88,13 @@ PYBIND11_MODULE(apex_core, module) {
 
     py::class_<RaceStatus>(module, "RaceStatus")
             .def_readonly("on_track", &RaceStatus::on_track)
+            .def_readonly("stuck_on_wall", &RaceStatus::stuck_on_wall)
             .def_readonly("completed_laps", &RaceStatus::completed_laps)
-        .def_readonly("last_lap", &RaceStatus::last_lap)
-        .def_readonly("speed", &RaceStatus::speed);
+            .def_readonly("last_lap", &RaceStatus::last_lap)
+            .def_readonly("speed", &RaceStatus::speed)
+            .def_readonly("lap_time", &RaceStatus::lap_time)
+            .def_readonly("lap_distance", &RaceStatus::lap_distance);
+
 
     py::class_<Race>(module, "Race")
             .def(py::init<const WorldSettings &>(), py::arg("settings"))
@@ -101,7 +105,19 @@ PYBIND11_MODULE(apex_core, module) {
             .def("step", &Race::step, py::arg("controls"), py::arg("automatic"), py::arg("dt"))
             .def_property_readonly("player", &Race::player, py::return_value_policy::copy)
             .def_property_readonly("status", &Race::status, py::return_value_policy::copy)
-            .def_property_readonly("player_controls", &Race::player_controls);;
+            .def_property_readonly("player_controls", &Race::player_controls);
+
+    py::class_<apex::simulation::TrainingContacts>(module, "TrainingContacts")
+            .def_readonly("count", &apex::simulation::TrainingContacts::count)
+            .def_readonly("severity", &apex::simulation::TrainingContacts::severity);
+
+    py::class_<apex::simulation::TrainingGrid>(module, "TrainingGrid")
+            .def(py::init<const WorldSettings &, const std::vector<int> &>(),
+                 py::arg("settings"), py::arg("starting_slots"))
+            .def("step", &apex::simulation::TrainingGrid::step,
+                 py::arg("controls"), py::arg("active"), py::arg("dt"))
+            .def("race", &apex::simulation::TrainingGrid::race, py::return_value_policy::reference_internal)
+            .def("contacts", &apex::simulation::TrainingGrid::contacts);
 
     module.def("make_race_settings", &apex::simulation::make_race_settings);
     module.def("track_progress",
@@ -162,17 +178,17 @@ PYBIND11_MODULE(apex_core, module) {
                     const std::vector<VehicleState> &other_cars,
                     std::string_view title, std::size_t focused_slot, std::string_view focused_driver,
                     const std::vector<std::string> &driver_names,
-                    std::optional<std::tuple<std::size_t, std::size_t, double>> telemetry,
+                    std::optional<std::tuple<std::size_t, std::size_t, double> > telemetry,
                     const std::vector<std::size_t> &eliminated_slots,
-                    const std::vector<std::tuple<std::size_t, double, std::optional<double>>> &standings,
-                    std::optional<std::tuple<std::size_t, double, bool>> recap) {
+                    const std::vector<std::tuple<std::size_t, double, std::optional<double> > > &standings,
+                    std::optional<std::tuple<std::size_t, double, bool> > recap) {
                      if (focused_slot >= apex::simulation::grid_size) {
                          throw std::out_of_range("Focused grid slot is out of range");
                      }
                      auto status = leader.status();
                      std::vector<apex::graphics::TrainingStanding> rows;
                      rows.reserve(standings.size());
-                     for (const auto &[slot, progress, lap_time] : standings) {
+                     for (const auto &[slot, progress, lap_time]: standings) {
                          rows.push_back({slot, progress, lap_time});
                      }
                      std::optional<apex::graphics::TrainingTelemetry> training;
@@ -192,7 +208,7 @@ PYBIND11_MODULE(apex_core, module) {
                  py::arg("focused_slot") = apex::simulation::player_slot, py::arg("focused_driver") = "",
                  py::arg("driver_names") = std::vector<std::string>{}, py::arg("telemetry") = py::none(),
                  py::arg("eliminated_slots") = std::vector<std::size_t>{},
-                 py::arg("standings") = std::vector<std::tuple<std::size_t, double, std::optional<double>>>{},
+                 py::arg("standings") = std::vector<std::tuple<std::size_t, double, std::optional<double> > >{},
                  py::arg("recap") = py::none())
             .def("close", &SimulationWindow::close);
 
@@ -204,5 +220,6 @@ PYBIND11_MODULE(apex_core, module) {
 
 #ifdef __APPLE__
     module.def("set_application_icon", &apex::platform::set_application_icon, py::arg("path"));
+    module.def("set_application_name", &apex::platform::set_application_name, py::arg("name"));
 #endif
 }
