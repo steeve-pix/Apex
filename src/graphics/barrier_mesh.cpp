@@ -82,19 +82,22 @@ namespace apex::graphics {
         }
 
         void append_boundary_wall(std::vector<Vertex> &vertices, std::span<const math::Vec2> near_edge,
-                                  std::span<const math::Vec2> far_edge, float height) {
+                                  std::span<const math::Vec2> far_edge, float height, const simulation::TrackPath &path) {
             for (std::size_t index = 0; index < near_edge.size(); ++index) {
                 const std::size_t next = (index + 1) % near_edge.size();
 
-                const auto a = boundary_vertex(near_edge[index], 0.0F);
-                const auto b = boundary_vertex(far_edge[index], 0.0F);
-                const auto c = boundary_vertex(far_edge[next], 0.0F);
-                const auto d = boundary_vertex(near_edge[next], 0.0F);
+                const float start = static_cast<float>(path.elevation_at(path.distance_at_point(index)).height);
+                const float end = static_cast<float>(path.elevation_at(path.distance_at_point(next)).height);
+                constexpr float foundation = .07F;
+                const auto a = boundary_vertex(near_edge[index], start - foundation);
+                const auto b = boundary_vertex(far_edge[index], start - foundation);
+                const auto c = boundary_vertex(far_edge[next], end - foundation);
+                const auto d = boundary_vertex(near_edge[next], end - foundation);
 
-                const Vertex a_top{a.x, a.y, height};
-                const Vertex b_top{b.x, b.y, height};
-                const Vertex c_top{c.x, c.y, height};
-                const Vertex d_top{d.x, d.y, height};
+                const Vertex a_top{a.x, a.y, start + height};
+                const Vertex b_top{b.x, b.y, start + height};
+                const Vertex c_top{c.x, c.y, end + height};
+                const Vertex d_top{d.x, d.y, end + height};
 
                 append_quad(vertices, a_top, b_top, c_top, d_top);
                 append_quad(vertices, b, c, c_top, b_top);
@@ -152,8 +155,8 @@ namespace apex::graphics {
 
             const auto far_edges = simulation::make_track_boundaries(*track.path, far_offset);
 
-            append_boundary_wall(vertices, near_edges.left, far_edges.left, settings.height);
-            append_boundary_wall(vertices, near_edges.right, far_edges.right, settings.height);
+            append_boundary_wall(vertices, near_edges.left, far_edges.left, settings.height, *track.path);
+            append_boundary_wall(vertices, near_edges.right, far_edges.right, settings.height, *track.path);
         } else {
             const double inner_outer_radius =
                     track.centerline_radius - half_width - settings.clearance;

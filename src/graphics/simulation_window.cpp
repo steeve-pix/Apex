@@ -57,6 +57,19 @@ namespace apex::graphics {
                 mat3 steer = mat3(c,s,0, -s,c,0, 0,0,1);
                 return steer * roll;
             }
+
+            uniform vec2 road_gradient;
+
+            mat3 mesh_orientation(float heading) {
+                vec2 direction = vec2(cos(heading), sin(heading));
+                if (road_gradient == vec2(0.0)) {
+                    return mat3(vec3(direction, 0.0), vec3(-direction.y, direction.x, 0.0),
+                                vec3(0.0, 0.0, 1.0));
+                }
+                vec3 forward = normalize(vec3(direction, dot(road_gradient, direction)));
+                vec3 up = normalize(vec3(-road_gradient, 1.0));
+                return mat3(forward, cross(up, forward), up);
+            }
         )glsl";
 
         constexpr char shadow_vertex_shader_source[] = R"glsl(
@@ -68,19 +81,8 @@ namespace apex::graphics {
             uniform mat4 light_view_projection;
 
             void main() {
-                float c = cos(heading);
-                float s = sin(heading);
                 vec3 local = (wheel_pivot.xyz + wheel_rotation() * (position - wheel_pivot.xyz)) * mesh_scale;
-
-                vec2 rotated_position = vec2(
-                    c * local.x - s * local.y,
-                    s * local.x + c * local.y
-                );
-
-                vec3 world_position = vec3(
-                    rotated_position + offset,
-                    local.z + elevation
-                );
+                vec3 world_position = mesh_orientation(heading) * local + vec3(offset, elevation);
 
                 gl_Position =
                     light_view_projection * vec4(world_position, 1.0);
@@ -114,27 +116,15 @@ namespace apex::graphics {
             out float surface_material;
 
             void main() {
-                float c = cos(heading);
-                float s = sin(heading);
                 mat3 wheel = wheel_rotation();
+                mat3 orientation = mesh_orientation(heading);
                 vec3 local = (wheel_pivot.xyz + wheel * (position - wheel_pivot.xyz)) * mesh_scale;
-                vec3 normal = wheel * vertex_normal;
-
-                vec2 rotated_position = vec2(
-                    c * local.x - s * local.y,
-                    s * local.x + c * local.y
-                );
-
-                vec3 world_position = vec3(
-                    rotated_position + offset,
-                    local.z + elevation
-                );
+                vec3 world_position = orientation * local + vec3(offset, elevation);
 
                 surface_position = world_position;
                 local_position = position;
                 surface_color = vertex_color;
-                surface_normal = vec3(c * normal.x - s * normal.y,
-                                      s * normal.x + c * normal.y, normal.z);
+                surface_normal = orientation * wheel * vertex_normal;
                 surface_road_coordinates = road_coordinates;
                 surface_material = material_parameter;
 
@@ -155,6 +145,9 @@ namespace apex::graphics {
             uniform bool road_markings_enabled;
             uniform float road_half_width;
             uniform float curb_segments;
+            uniform vec2 curb_bend_thresholds;
+            uniform vec4 grass_verge; // Start, end, taper, and width.
+            uniform float runoff_width;
 
             uniform bool lighting_enabled;
             uniform vec3 direction_to_light;
@@ -421,7 +414,7 @@ namespace apex::graphics {
                     bool outside = bend * surface_road_coordinates.y > 0.0;
 
                     if (edge_distance <= road_half_width
-                        || (race_scene && abs(bend) < (outside ? .30 : .13))) {
+                        || (race_scene && abs(bend) < (outside ? curb_bend_thresholds.y : curb_bend_thresholds.x))) {
                         discard;
                     }
 
@@ -483,6 +476,18 @@ namespace apex::graphics {
                     base_color *= .94 + aggregate*.12 - .15*rubber - braking_rubber + .14*(grain-.5)*detail;
                     float seam = abs(distance_from_center - road_half_width - .106);
                     runoff *= mix(.73, 1.0, smoothstep(.001,.009 + fwidth(seam),seam));
+                    if (race_scene && grass_verge.w > 0.0) {
+                        float lap = surface_road_coordinates.x / track_length;
+                        float taper = smoothstep(0.0, grass_verge.z, lap - grass_verge.x)
+                                    * smoothstep(0.0, grass_verge.z, grass_verge.y - lap);
+                        float wall_edge = road_half_width + runoff_width;
+                        float grass_edge = wall_edge - grass_verge.w * taper;
+                        float edge_aa = max(fwidth(distance_from_center), .0001);
+                        float cover = smoothstep(grass_edge, grass_edge + edge_aa, distance_from_center);
+                        vec3 turf = mix(vec3(.108,.162,.083), vec3(.22,.29,.13), noise(p * 31.0));
+                        turf *= .92 + .24 * grain;
+                        runoff = mix(runoff, turf, cover);
+                    }
                     base_color = mix(base_color, runoff, shoulder);
 
                     float line_width = road_half_width * 0.04;
@@ -622,7 +627,7 @@ namespace apex::graphics {
         )glsl";
 
         simulation::TrackSettings curb_geometry_settings(const simulation::TrackSettings &track) {
-            constexpr double desired_curb_width = 0.045;
+            constexpr double desired_curb_width = simulation::curb_width;
 
             double curb_width = desired_curb_width;
 
@@ -960,6 +965,7 @@ namespace apex::graphics {
         GLint shadow_scale_location{};
         GLint shadow_wheel_angles_location{};
         GLint shadow_elevation_location{};
+        GLint shadow_road_gradient_location{};
         GLint light_view_projection_location{};
 
         TrackMesh track_mesh;
@@ -982,12 +988,16 @@ namespace apex::graphics {
         GLint offset_location{};
         GLint view_projection_location{};
         GLint elevation_location{};
+        GLint road_gradient_location{};
         GLint heading_location{};
         GLint scale_location{};
         GLint color_location{};
         GLint curb_pattern_location{};
         GLint road_half_width_location{};
         GLint curb_segments_location{};
+        GLint curb_bend_thresholds_location{};
+        GLint grass_verge_location{};
+        GLint runoff_width_location{};
         GLint lighting_enabled_location{};
         GLint direction_to_light_location{};
         GLint floodlight_count_location{};
@@ -1091,11 +1101,13 @@ namespace apex::graphics {
             shadow_scale_location = shadow_program.uniform_location("mesh_scale");
             shadow_wheel_angles_location = shadow_program.uniform_location("wheel_angles");
             shadow_elevation_location = shadow_program.uniform_location("elevation");
+            shadow_road_gradient_location = shadow_program.uniform_location("road_gradient");
             light_view_projection_location = shadow_program.uniform_location("light_view_projection");
 
             offset_location = program.uniform_location("offset");
             view_projection_location = program.uniform_location("view_projection");
             elevation_location = program.uniform_location("elevation");
+            road_gradient_location = program.uniform_location("road_gradient");
             heading_location = program.uniform_location("heading");
             scale_location = program.uniform_location("mesh_scale");
             wheel_angles_location = program.uniform_location("wheel_angles");
@@ -1105,6 +1117,9 @@ namespace apex::graphics {
             road_markings_enabled_location = program.uniform_location("road_markings_enabled");
             road_half_width_location = program.uniform_location("road_half_width");
             curb_segments_location = program.uniform_location("curb_segments");
+            curb_bend_thresholds_location = program.uniform_location("curb_bend_thresholds");
+            grass_verge_location = program.uniform_location("grass_verge");
+            runoff_width_location = program.uniform_location("runoff_width");
 
             lighting_enabled_location = program.uniform_location("lighting_enabled");
             direction_to_light_location = program.uniform_location("direction_to_light");
@@ -1180,7 +1195,7 @@ namespace apex::graphics {
         }
 
         std::string_view frame_trackside_camera(CameraSettings &settings, const simulation::WorldState &world,
-                                               std::size_t slot) {
+                                               std::size_t slot, float car_height) {
             const auto &path = *track_settings.path;
             const auto &car = world.vehicle;
             const auto projection = path.project(car.body.position);
@@ -1203,7 +1218,7 @@ namespace apex::graphics {
             constexpr float lead_time = .075F;
             settings.position = station.eye;
             settings.target = {position.x + std::clamp(velocity.x*lead_time, -.14, .14),
-                               position.y + std::clamp(velocity.y*lead_time, -.14, .14), .060F};
+                               position.y + std::clamp(velocity.y*lead_time, -.14, .14), car_height + .060F};
             const float range = glm::length(settings.position - settings.target);
             settings.vertical_fov_degrees = std::clamp(glm::degrees(2.0F * std::atan2(.40F,range)), 12.0F, 49.0F);
             return station.name;
@@ -1477,6 +1492,27 @@ namespace apex::graphics {
         constexpr float sensor_elevation = 0.002F;
         constexpr float vehicle_elevation = 0.0002F;
 
+        struct RoadPose {
+            float height{};
+            glm::vec2 gradient{};
+        };
+        const auto *path = view.track_settings.path.get();
+        const auto road_pose = [path](const simulation::VehicleState &car) -> RoadPose {
+            if (!path || !path->has_elevation()) {
+                return {};
+            }
+            const auto projection = path->project(car.body.position);
+            const auto profile = path->elevation_at(projection.distance_along_track);
+            return {static_cast<float>(profile.height),
+                    {profile.grade * projection.sample.tangent.x, profile.grade * projection.sample.tangent.y}};
+        };
+        const auto player_pose = road_pose(world.vehicle);
+        std::vector<RoadPose> opponent_poses;
+        opponent_poses.reserve(opponents.size());
+        for (const auto &opponent : opponents) {
+            opponent_poses.push_back(road_pose(opponent));
+        }
+
         const glm::vec3 direction_to_light =
                 glm::normalize(glm::vec3{0.94F, -0.26F, 0.25F});
 
@@ -1504,7 +1540,7 @@ namespace apex::graphics {
             const glm::vec3 focus{
                 static_cast<float>(car.body.position.x + std::cos(car.heading)),
                 static_cast<float>(car.body.position.y + std::sin(car.heading)),
-                0.0F
+                player_pose.height
             };
             const glm::vec3 right = glm::normalize(glm::cross(up, direction_to_light));
             const glm::vec3 vertical = glm::cross(direction_to_light, right);
@@ -1525,6 +1561,7 @@ namespace apex::graphics {
         view.shadow_map.bind_for_writing();
         view.shadow_program.use();
         glUniform1f(view.shadow_scale_location, 1.0F);
+        glUniform2f(view.shadow_road_gradient_location, 0.0F, 0.0F);
 
         glUniformMatrix4fv(view.light_view_projection_location, 1, GL_FALSE, glm::value_ptr(light_view_projection));
 
@@ -1547,9 +1584,13 @@ namespace apex::graphics {
             view.scenery.draw();
         }
 
-        const auto draw_car = [&view](const simulation::VehicleState &car, GLint offset, GLint heading, GLint wheels) {
+        const auto draw_car = [&view, vehicle_elevation](const simulation::VehicleState &car, const RoadPose &pose,
+                                                        GLint offset, GLint heading, GLint wheels,
+                                                        GLint elevation, GLint gradient) {
             glUniform2f(offset, static_cast<float>(car.body.position.x), static_cast<float>(car.body.position.y));
             glUniform1f(heading, static_cast<float>(car.heading));
+            glUniform1f(elevation, vehicle_elevation + pose.height);
+            glUniform2fv(gradient, 1, glm::value_ptr(pose.gradient));
             const auto roll = [&](float radius) {
                 return static_cast<float>(std::remainder(car.forward_travel / radius, 2.0 * std::numbers::pi));
             };
@@ -1558,16 +1599,20 @@ namespace apex::graphics {
             view.vehicle_mesh.draw();
         };
 
-        glUniform1f(view.shadow_elevation_location, vehicle_elevation);
-        for (const auto &opponent : opponents) {
-            draw_car(opponent, view.shadow_offset_location, view.shadow_heading_location, view.shadow_wheel_angles_location);
+        const auto draw_shadow_car = [&](const simulation::VehicleState &car, const RoadPose &pose) {
+            draw_car(car, pose, view.shadow_offset_location, view.shadow_heading_location,
+                     view.shadow_wheel_angles_location, view.shadow_elevation_location, view.shadow_road_gradient_location);
+        };
+        for (std::size_t i = 0; i < opponents.size(); ++i) {
+            draw_shadow_car(opponents[i], opponent_poses[i]);
         }
-        draw_car(world.vehicle, view.shadow_offset_location, view.shadow_heading_location, view.shadow_wheel_angles_location);
+        draw_shadow_car(world.vehicle, player_pose);
 
         view.compositor.begin(width, height);
 
         view.program.use();
         glUniform1f(view.scale_location, 1.0F);
+        glUniform2f(view.road_gradient_location, 0.0F, 0.0F);
 
         glUniform1i(view.road_markings_enabled_location, GL_FALSE);
 
@@ -1583,6 +1628,10 @@ namespace apex::graphics {
         glUniform1i(view.race_scene_location, race != nullptr);
         glUniform1i(view.car_material_location, GL_FALSE);
         glUniform1f(view.road_half_width_location, static_cast<float>(view.track_settings.road_width * 0.5));
+        glUniform2f(view.curb_bend_thresholds_location, simulation::inside_curb_bend, simulation::outside_curb_bend);
+        const auto &verge = view.track_settings.grass_verge;
+        glUniform4f(view.grass_verge_location, verge.start_fraction, verge.end_fraction, verge.taper_fraction, verge.width);
+        glUniform1f(view.runoff_width_location, simulation::runoff_width);
 
         view.shadow_map.bind_texture(0);
         glUniform1i(view.shadow_depth_location, 0);
@@ -1648,16 +1697,17 @@ namespace apex::graphics {
             const float follow_height = view.high_chase ? 0.09F : 0.061F;
             const float look_ahead = view.high_chase ? 0.22F : 0.075F;
 
+            const glm::vec2 lead{std::cos(heading) * look_ahead, std::sin(heading) * look_ahead};
             view.camera.set_target(glm::vec3{
-                static_cast<float>(position.x + std::cos(heading) * look_ahead),
-                static_cast<float>(position.y + std::sin(heading) * look_ahead),
-                follow_height
+                static_cast<float>(position.x) + lead.x, static_cast<float>(position.y) + lead.y,
+                player_pose.height + glm::dot(lead, player_pose.gradient) + follow_height
             });
         }
 
         auto camera = view.camera.settings();
-        const auto trackside_name = view.trackside_view ? view.frame_trackside_camera(camera, world, focused_slot)
-                                                       : std::string_view{};
+        const auto trackside_name = view.trackside_view
+                                        ? view.frame_trackside_camera(camera, world, focused_slot, player_pose.height)
+                                        : std::string_view{};
         if (race && view.follow_vehicle && view.scenery.footbridge() && camera.position.z > .29F) {
             const auto &bridge = *view.scenery.footbridge();
             const glm::vec2 center{bridge.position.x,bridge.position.y};
@@ -1771,7 +1821,7 @@ namespace apex::graphics {
 
         if (!race || view.show_sensors) {
             const auto readings = simulation::sense_track(world.vehicle, view.track_settings, sensors);
-            view.sensor_lines.update(world.vehicle, sensors, readings);
+            view.sensor_lines.update(world.vehicle, sensors, readings, path);
             glUniform1i(view.use_vertex_color_location, GL_FALSE);
             glUniform2f(view.offset_location, 0.0F, 0.0F);
             glUniform1f(view.heading_location, 0.0F);
@@ -1791,7 +1841,10 @@ namespace apex::graphics {
         const auto livery = [&](std::size_t slot) -> const glm::vec3 & {
             return teams[(slot / 2) % std::size(teams)];
         };
-        glUniform1f(view.elevation_location, vehicle_elevation);
+        const auto draw_scene_car = [&](const simulation::VehicleState &car, const RoadPose &pose) {
+            draw_car(car, pose, view.offset_location, view.heading_location, view.wheel_angles_location,
+                     view.elevation_location, view.road_gradient_location);
+        };
         glUniform3f(view.color_location, 1.0F, 1.0F, 1.0F);
         glUniform1i(view.use_vertex_color_location, GL_TRUE);
         glUniform1i(view.car_material_location, GL_TRUE);
@@ -1799,11 +1852,11 @@ namespace apex::graphics {
             const auto slot = index + (index >= focused_slot);
             glUniform3fv(view.livery_location, 1, glm::value_ptr(livery(slot)));
             glUniform1i(view.car_number_location, static_cast<int>(slot % simulation::grid_size) + 1);
-            draw_car(opponents[index], view.offset_location, view.heading_location, view.wheel_angles_location);
+            draw_scene_car(opponents[index], opponent_poses[index]);
         }
         glUniform3fv(view.livery_location, 1, glm::value_ptr(livery(focused_slot)));
         glUniform1i(view.car_number_location, static_cast<int>(focused_slot % simulation::grid_size) + 1);
-        draw_car(world.vehicle, view.offset_location, view.heading_location, view.wheel_angles_location);
+        draw_scene_car(world.vehicle, player_pose);
 
         view.compositor.present(race != nullptr, circuit_overview);
 
@@ -1824,23 +1877,24 @@ namespace apex::graphics {
             std::vector<DriverNameplate> nameplates;
             if (!driver_names.empty() && !(training && training->recap)) {
                 nameplates.reserve(driver_names.size());
-                const auto project_helmet = [&](const simulation::VehicleState &car, std::size_t slot) {
+                const auto project_helmet = [&](const simulation::VehicleState &car, const RoadPose &pose,
+                                                std::size_t slot) {
                     constexpr float helmet_offset = -.016F;
                     constexpr float helmet_height = .063F;
                     const auto &position = car.body.position;
                     const auto clip = view_projection * glm::vec4{
                         position.x + helmet_offset * std::cos(car.heading),
                         position.y + helmet_offset * std::sin(car.heading),
-                        vehicle_elevation + helmet_height, 1.0F
+                        vehicle_elevation + pose.height + helmet_height, 1.0F
                     };
                     if (clip.w > 0.0F && std::abs(clip.z) <= clip.w) {
                         nameplates.push_back({glm::vec2{clip} / clip.w, driver_names[slot], clip.w,
                                               slot == focused_slot, livery(slot), eliminated(slot)});
                     }
                 };
-                project_helmet(world.vehicle, focused_slot);
+                project_helmet(world.vehicle, player_pose, focused_slot);
                 for (std::size_t index = 0; index < opponents.size(); ++index) {
-                    project_helmet(opponents[index], index + (index >= focused_slot));
+                    project_helmet(opponents[index], opponent_poses[index], index + (index >= focused_slot));
                 }
                 std::stable_sort(nameplates.begin(), nameplates.end(), [](const auto &a, const auto &b) {
                     return a.focused != b.focused ? a.focused : a.depth < b.depth;

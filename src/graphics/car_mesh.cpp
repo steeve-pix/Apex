@@ -1,4 +1,5 @@
 #include "graphics/car_mesh.hpp"
+#include "simulation/race.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -306,11 +307,13 @@ namespace apex::graphics {
                             {.021F,side*.0035F,.0595F,.0040F,.0021F},
                             {.023F,0,.058F,.0032F,.0022F}}, carbon, Section::round);
 
-            for (float axle : {-.10F,.10F}) {
+            constexpr float half_wheelbase = static_cast<float>(simulation::race_wheelbase * .5);
+            for (float axle : {-half_wheelbase, half_wheelbase}) {
                 const bool rear = axle < 0.0F;
                 const float radius = rear ? rear_tire_radius : front_tire_radius;
-                const float half_width = rear ? .0143F : .0109F;
-                const glm::vec3 hub{axle,side*(rear ? .0490F : .0515F),radius};
+                const auto &tire = rear ? simulation::rear_tire : simulation::front_tire;
+                const float half_width = static_cast<float>(tire.half_width);
+                const glm::vec3 hub{axle,side * static_cast<float>(tire.lateral_offset),radius};
                 const glm::vec3 upright = hub - glm::vec3{0,side*(half_width + .0018F),0};
                 const glm::vec3 upper_joint = upright + glm::vec3{0,0,.005F};
                 const glm::vec3 lower_joint = upright - glm::vec3{0,0,.004F};

@@ -17,7 +17,7 @@ namespace apex::graphics {
 
         void update(
             const simulation::VehicleState &vehicle, const simulation::SensorSettings &sensors,
-            const simulation::SensorReadings &readings) const;
+            const simulation::SensorReadings &readings, const simulation::TrackPath *path) const;
 
         void draw() const;
 

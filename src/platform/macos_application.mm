@@ -23,4 +23,16 @@ namespace apex::platform {
             [image release];
         }
     }
+    void set_application_name(const std::string& name) {
+    @autoreleasepool {
+        NSString* title = [NSString stringWithUTF8String:name.c_str()];
+        [[NSProcessInfo processInfo] setProcessName:title];
+
+        NSMutableDictionary* info =
+            (NSMutableDictionary*)[[NSBundle mainBundle] infoDictionary];
+
+        info[@"CFBundleName"] = title;
+        info[@"CFBundleDisplayName"] = title;
+    }
+}
 }
