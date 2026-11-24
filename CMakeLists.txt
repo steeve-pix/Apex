@@ -51,6 +51,7 @@ glad_add_library(apex_glad STATIC
 add_library(apex_simulation STATIC
         src/simulation/body.cpp
         src/simulation/vehicle.cpp
+        src/simulation/vehicle_contact.cpp
         src/simulation/track.cpp
         src/simulation/world.cpp
         src/simulation/race.cpp

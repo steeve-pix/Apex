@@ -71,8 +71,12 @@ def main(*, evaluate: bool = False) -> None:
                     world = race.player
                     position = world.vehicle.body.position
 
-                    if not apex.is_on_track(position, track):
+                    status = race.status
+                    if not status.on_track:
                         failure = "left the track"
+                        break
+                    if status.stuck_on_wall:
+                        failure = "stuck on the wall"
                         break
 
                     distance, _ = apex.track_progress(position, track)

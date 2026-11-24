@@ -24,5 +24,5 @@ namespace apex::simulation {
     };
 
     void update_vehicle(VehicleState &vehicle, const VehicleControls &controls, const VehicleSettings &settings,
-                        double dt);
+                        double dt, math::Vec2 external_acceleration = {}, double external_yaw_rate = 0.0);
 }

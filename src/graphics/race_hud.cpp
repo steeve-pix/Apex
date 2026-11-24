@@ -263,6 +263,14 @@ namespace apex::graphics {
             if (!recap) {
                 const auto running = std::to_string(training.active_cars) + " RUNNING";
                 ui.text(right-ui.text_width(running,11,.45F),panel.y+17,running,11,muted,.45F);
+            } else {
+                const auto cut_off = std::ranges::count_if(standings, [](const BroadcastDriver &driver) {
+                    return !driver.eliminated && !driver.lap_time;
+                });
+                if (cut_off > 0) {
+                    const auto label = std::to_string(cut_off) + " CUT OFF";
+                    ui.text(right-ui.text_width(label,11,.45F),panel.y+17,label,11,muted,.45F);
+                }
             }
             ui.rect(x,panel.y+38,panel.width-24,1,rule);
             ui.text(x,panel.y+45,"POS",10,muted,.65F);
@@ -285,8 +293,13 @@ namespace apex::graphics {
                 }
                 const float middle = y + (row_height-1)*.5F;
                 ui.text(x,middle-6,std::to_string(rank + 1),12,focused ? cream : muted,.3F);
-                draw_driver_marker(ui,{x+31,middle},driver);
-                const auto ink = driver.eliminated && !focused && !winner ? muted : cream;
+                const bool cut_off = recap && !driver.eliminated && !driver.lap_time;
+                if (cut_off) {
+                    ui.line(x+28,middle,x+34,middle,1.6F,muted);
+                } else {
+                    draw_driver_marker(ui,{x+31,middle},driver);
+                }
+                const auto ink = (driver.eliminated || cut_off) && !focused && !winner ? muted : cream;
                 ui.text(x+43,middle-6.5F,driver.name,13,ink,.4F);
                 const auto value = driver.lap_time ? lap_time(driver.lap_time) : decimal(driver.progress);
                 ui.text(right-ui.text_width(value,12,.3F),middle-6,value,12,ink,.3F);

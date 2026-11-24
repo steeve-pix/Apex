@@ -762,7 +762,8 @@ namespace apex::graphics {
                     const auto sample = track.path->sample_at(distance);
                     const double offset = (half + simulation::runoff_width - .008) * turn;
                     return glm::vec3{sample.position.x + sample.tangent.y*offset,
-                                     sample.position.y - sample.tangent.x*offset, height};
+                                     sample.position.y - sample.tangent.x*offset,
+                                     height + track.path->elevation_at(distance).height};
                 };
                 for (int strip = 0; strip < 14; ++strip) {
                     const double start = corner.distance - .7 + strip * .105;
@@ -779,11 +780,9 @@ namespace apex::graphics {
                     const float fraction = static_cast<float>(station) / segments;
                     const auto sample = track.path->sample_at(corner.distance + (fraction - .48F) * 3.1F);
                     const auto point = [&](float offset) {
-                        return glm::vec3{
-                            sample.position.x + sample.tangent.y * offset * turn,
-                            sample.position.y - sample.tangent.x * offset * turn,
-                            .002F
-                        };
+                        const float x = static_cast<float>(sample.position.x + sample.tangent.y * offset * turn);
+                        const float y = static_cast<float>(sample.position.y - sample.tangent.x * offset * turn);
+                        return glm::vec3{x, y, ground.height_at(x,y) + .003F};
                     };
                     const float width = .025F + .66F * std::sin(fraction * std::numbers::pi_v<float>);
                     return std::array{point(barrier_edge), point(barrier_edge + width)};
@@ -807,12 +806,11 @@ namespace apex::graphics {
                 const auto sample = track.path->sample_at(corner.distance - advance);
                 const auto approach = track.path->sample_at(corner.distance - advance - .85).tangent;
                 const double offset = -(half + simulation::runoff_width + .092) * turn;
+                const auto base = track_position(sample,{0,offset,0});
+                const float height = ground.height_at(base.x,base.y);
                 const auto point = [&](float depth, float lateral, float z) {
-                    return glm::vec3{
-                        sample.position.x - sample.tangent.y * offset + approach.x * depth - approach.y * lateral,
-                        sample.position.y + sample.tangent.x * offset + approach.y * depth + approach.x * lateral,
-                        z
-                    };
+                    return glm::vec3{base.x + approach.x * depth - approach.y * lateral,
+                                     base.y + approach.y * depth + approach.x * lateral, height + z};
                 };
                 constexpr float edge = .093F;
                 mesh.quad(point(.001F,-.008F,0), point(.001F,.008F,0),

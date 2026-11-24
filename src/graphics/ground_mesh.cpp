@@ -73,13 +73,19 @@ namespace apex::graphics {
         heights_.resize(stride * stride);
 
         if (path) {
-            std::vector<glm::vec2> centerline;
+            struct Station {
+                glm::vec2 position;
+                glm::vec2 tangent;
+                double distance;
+            };
+            std::vector<Station> centerline;
             const double length = path->length();
             const auto paddock = path->sample_at(simulation::start_line_distance);
             const float verge = static_cast<float>(track->road_width * .5 + simulation::runoff_width) + 1.13F;
             for (double distance = 0; distance < length; distance += .22) {
                 const auto sample = path->sample_at(distance);
-                centerline.emplace_back(sample.position.x, sample.position.y);
+                centerline.push_back({{sample.position.x, sample.position.y},
+                                      {sample.tangent.x, sample.tangent.y}, distance});
             }
 
             for (int row = 0; row < stride; ++row) {
@@ -87,12 +93,18 @@ namespace apex::graphics {
                 for (int column = 0; column < stride; ++column) {
                     const float x = column * spacing_ - half_extent_;
                     float closest_squared = (verge + 2.2F) * (verge + 2.2F);
-                    for (const auto &point : centerline) {
-                        const float dx = point.x - x;
-                        const float dy = point.y - y;
-                        closest_squared = std::min(closest_squared, dx*dx + dy*dy);
+                    const Station *closest = nullptr;
+                    const glm::vec2 point{x,y};
+                    for (const auto &station : centerline) {
+                        const auto offset = point - station.position;
+                        const float squared = glm::dot(offset,offset);
+                        if (squared < closest_squared) {
+                            closest_squared = squared;
+                            closest = &station;
+                        }
                     }
-                    const float track_blend = smooth_step(verge, verge + 2.2F, std::sqrt(closest_squared));
+                    const float distance_from_road = std::sqrt(closest_squared);
+                    const float track_blend = smooth_step(verge, verge + 2.2F, distance_from_road);
                     const double dx = x - paddock.position.x;
                     const double dy = y - paddock.position.y;
                     const double along = dx*paddock.tangent.x + dy*paddock.tangent.y;
@@ -100,8 +112,16 @@ namespace apex::graphics {
                     const float outside_paddock = std::max({-5.2 - along, along - 3.4, std::abs(across) - 2.05});
                     const float basin = reservoir_basin(x, y);
                     const float relief = std::lerp(landscape(x,y), -.66F, basin);
-                    heights_[index(column,row)] = relief * track_blend
-                                                * smooth_step(.25F,1.7F,outside_paddock);
+                    float roadbed = 0.0F;
+                    if (closest && path->has_elevation()) {
+                        const double station = closest->distance + glm::dot(point - closest->position, closest->tangent);
+                        const auto profile = path->elevation_at(station);
+                        // Leave room below the road and curb meshes for the coarser terrain triangles.
+                        const float clearance = std::min(.055F, static_cast<float>(std::abs(profile.height) * .4));
+                        roadbed = static_cast<float>(profile.height) - clearance;
+                    }
+                    heights_[index(column,row)] = std::lerp(roadbed,
+                        relief * smooth_step(.25F,1.7F,outside_paddock), track_blend);
                 }
             }
         }
