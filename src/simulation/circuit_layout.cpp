@@ -103,6 +103,13 @@ namespace apex::simulation {
             }
         }
 
-        return TrackPath(std::move(points));
+        return TrackPath(std::move(points), {
+            {0.0, 0.0},
+            {.135, 0.0},   // Keep the starting grid and pit straight level.
+            {.228, .76},   // Crest at Turn One.
+            {.335, -.06},  // Bottom of the descent alongside the reservoir.
+            {.409, 0.0},   // Rejoin the level circuit before the north straight.
+            {1.0, 0.0}
+        });
     }
 }

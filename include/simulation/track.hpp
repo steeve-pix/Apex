@@ -6,11 +6,19 @@
 #include "math/vec2.hpp"
 
 namespace apex::simulation {
+    struct RunoffVerge {
+        double start_fraction{};
+        double end_fraction{};
+        double taper_fraction{};
+        double width{};
+    };
+
     struct TrackSettings {
         double centerline_radius{0.65};
         double road_width{0.30};
         double off_road_drag{4.0};
         std::shared_ptr<const TrackPath> path{};
+        RunoffVerge grass_verge{};
     };
 
     [[nodiscard]] bool is_on_track(const math::Vec2 &position, const TrackSettings &settings);

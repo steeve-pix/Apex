@@ -15,6 +15,7 @@
 #include "simulation/track.hpp"
 #include "simulation/track_boundaries.hpp"
 #include "simulation/world.hpp"
+#include "simulation/vehicle_contact.hpp"
 
 namespace {
     void expect_near(double actual, double expected, const char *label) {
@@ -40,6 +41,111 @@ namespace {
         const auto boundaries = apex::simulation::make_track_boundaries(*settings.track.path, wall_edge);
         expect(boundaries.left.size() == settings.track.path->points().size(),
                "The circuit must support runoff and barrier offsets");
+    }
+
+    void test_sunset_elevation() {
+        using namespace apex::simulation;
+        const auto settings = make_race_settings();
+        const auto &path = *settings.track.path;
+        const auto at = [&](double fraction) { return path.elevation_at(fraction * path.length()); };
+        expect_near(at(start_line_distance / path.length()).height, 0.0, "Starting grid stays level");
+        expect(at(.228).height > .7 && at(.335).height < 0.0, "Turn One crests above the lakeside section");
+        expect(at(.18).grade > 0.1 && at(.28).grade < -0.1, "The road climbs into Turn One and descends toward the lake");
+        expect_near(at(.228).grade, 0.0, "The grade eases through the crest");
+        expect_near(at(-.72).height, at(.28).height, "Elevation wraps around the circuit");
+
+        const auto speed_on_grade = [&](double rise) {
+            auto trial = settings;
+            const auto points = path.points();
+            trial.track.path = std::make_shared<const TrackPath>(
+                std::vector<apex::math::Vec2>{points.begin(), points.end()},
+                std::vector<TrackElevationPoint>{{0,0}, {.02,0}, {.11,rise}, {.20,0}, {1,0}});
+            Race race(trial);
+            for (int tick = 0; tick < 120; ++tick) {
+                race.step({.throttle = .65}, false, 1.0 / 120.0);
+            }
+            return race.status().speed;
+        };
+        const double flat_speed = speed_on_grade(0.0);
+        expect(speed_on_grade(.55) < flat_speed - .03 && speed_on_grade(-.55) > flat_speed + .03,
+               "At the same throttle, a car gains speed downhill and loses acceleration uphill");
+    }
+
+    void test_turn_one_surface_recovery() {
+        using namespace apex::simulation;
+        const auto settings = make_race_settings();
+        auto paved_settings = settings;
+        paved_settings.track.grass_verge = {};
+        const auto &path = *settings.track.path;
+        constexpr double dt = 1.0 / 120.0;
+
+        const auto approach = [&](const WorldSettings &setup, double fraction) {
+            Race race(setup);
+            for (int tick = 0; tick < 2000; ++tick) {
+                if (path.project(race.player().vehicle.body.position).distance_along_track >= fraction * path.length()) {
+                    return race;
+                }
+                race.step({}, true, dt);
+            }
+            throw std::runtime_error("Autopilot did not reach the Turn One descent");
+        };
+
+        auto race = approach(settings, .249);
+        auto paved = approach(paved_settings, .249);
+        int grass_tick = -1;
+        bool clipped_curb = false;
+        bool recovered = false;
+        double speed_loss = 0.0;
+        for (int tick = 0; tick < 330; ++tick) {
+            const bool correct = grass_tick >= 0 && tick > grass_tick + 8;
+            constexpr VehicleControls drift{.throttle = .30, .steering = .035};
+            race.step(drift, correct, dt);
+            paved.step(drift, correct, dt);
+            expect(race.status().on_track, "Clipping the kerb and touching grass with one tire must allow recovery");
+            expect(!race.status().stuck_on_wall, "A recovering driver must not be flagged as stuck on the wall");
+
+            const auto tires = race_tire_contacts(race.player().vehicle, settings);
+            clipped_curb |= std::ranges::any_of(tires, [](const auto &tire) { return tire.curb > .04; });
+            if (grass_tick < 0 && std::ranges::count_if(tires, [](const auto &tire) { return tire.grass > .15; }) == 1) {
+                expect(clipped_curb, "The car should clip a kerb before reaching the downhill grass verge");
+                grass_tick = tick;
+            }
+            if (grass_tick >= 0) {
+                speed_loss = std::max(speed_loss, paved.status().speed - race.status().speed);
+            }
+            if (correct && std::ranges::all_of(tires, [](const auto &tire) { return tire.asphalt > .9975; })) {
+                recovered = true;
+                break;
+            }
+        }
+        expect(grass_tick >= 0 && recovered, "A car can recover after one tire touches grass on the downhill exit");
+        expect(speed_loss > .04, "Grass contact must slow the car more than paved runoff under the same controls");
+
+        auto pinned = approach(settings, .249);
+        constexpr VehicleControls into_wall{.throttle = .50, .steering = -.65};
+        for (int tick = 0; tick < 120; ++tick) {
+            pinned.step(into_wall, false, dt);
+            expect(!pinned.status().stuck_on_wall, "The wall rule must give drivers time to recover");
+        }
+        for (int tick = 0; tick < 360 && !pinned.status().stuck_on_wall; ++tick) {
+            pinned.step(into_wall, false, dt);
+        }
+        expect(pinned.status().on_track && pinned.status().stuck_on_wall,
+               "A car creeping against the wall must be flagged even while a tire is still on the track");
+
+        auto excursion = approach(settings, .249);
+        int excursion_grass_tick = -1;
+        for (int tick = 0; tick < 240 && excursion.status().on_track; ++tick) {
+            const bool correct = excursion_grass_tick >= 0 && tick > excursion_grass_tick + 8;
+            excursion.step({.throttle = .30, .steering = -.02}, correct, dt);
+            if (excursion_grass_tick < 0) {
+                const auto tires = race_tire_contacts(excursion.player().vehicle, settings);
+                if (std::ranges::any_of(tires, [](const auto &tire) { return tire.grass > .15; })) {
+                    excursion_grass_tick = tick;
+                }
+            }
+        }
+        expect(!excursion.status().on_track, "A car that takes all four tires off the racing surface must be off track");
     }
 
     void test_race_car_pace() {
@@ -438,6 +544,89 @@ namespace {
             expect_near(reading.distance, 0.25, "Sensor range limit");
         }
     }
+    void test_vehicle_footprint() {
+        using namespace apex::simulation;
+        VehicleState a;
+        VehicleState b;
+        // Front wing corner against the other car's rear wing corner.
+        b.body.position = {.328, .10};
+        expect(vehicle_contact(a, b).has_value(), "Wing corners must collide outside the old ellipse");
+        a.body.velocity = {1.0, 0.0};
+        const auto impact = resolve_vehicle_contact(a, b);
+        expect(impact && *impact > 0.0, "Wing impact must slow the closing velocity");
+        expect_near(a.body.velocity.x + b.body.velocity.x, 1.0, "Impact conserves linear momentum");
+        std::array<VehicleState *, 2> pair{&a, &b};
+        solve_vehicle_contacts(pair);
+        expect(!vehicle_contact(a, b), "Wing overlap must be separated");
+
+        a = {};
+        b = {};
+        b.body.position = {0.0, .14};
+        expect(!vehicle_contact(a, b), "Side-by-side cars with a visible gap must remain separate");
+        b.body.position.y = .12;
+        expect(vehicle_contact(a, b).has_value(), "Side-by-side tire overlap must collide");
+        solve_vehicle_contacts(pair);
+        expect(!vehicle_contact(a, b), "Side contact must be separated");
+
+        // Rotate the same wing-corner impact by 90 degrees.
+        a = {};
+        b = {};
+        a.heading = b.heading = std::numbers::pi / 2.0;
+        b.body.position = {-.10, .328};
+        const auto rotated = vehicle_contact(a, b);
+        expect(rotated && std::abs(rotated->normal.y) > .99, "Contact normal must rotate with the cars");
+
+        std::array<VehicleState, 3> pileup{};
+        pileup[1].body.position = {.30, 0.0};
+        pileup[2].body.position = {.60, 0.0};
+        std::array<VehicleState *, 3> field{&pileup[0], &pileup[1], &pileup[2]};
+        solve_vehicle_contacts(field);
+        for (std::size_t i = 0; i < field.size(); ++i) {
+            for (std::size_t j = i + 1; j < field.size(); ++j) {
+                const auto contact = vehicle_contact(*field[i], *field[j]);
+                expect(!contact || contact->penetration < 1e-6, "Pileup solver must remove chain overlaps");
+            }
+        }
+    }
+
+    void test_shared_training_grid() {
+        using namespace apex::simulation;
+        const auto settings = make_race_settings();
+        TrainingGrid single(settings, {0});
+        Race isolated(settings, SessionMode::time_trial, 0);
+        const VehicleControls throttle{.throttle = 0.5};
+        constexpr double dt = 1.0 / 120.0;
+        for (int tick = 0; tick < 120; ++tick) {
+            single.step({throttle}, {true}, dt);
+            isolated.step(throttle, false, dt);
+        }
+        expect_near(single.race(0).player().vehicle.body.position.x,
+                    isolated.player().vehicle.body.position.x, "Shared grid single-car x");
+        expect_near(single.race(0).player().vehicle.body.position.y,
+                    isolated.player().vehicle.body.position.y, "Shared grid single-car y");
+
+        TrainingGrid pair(settings, {0, 2});
+        bool rejected = false;
+        try {
+            pair.step({throttle}, {true, true}, dt);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        expect(rejected, "Shared grid must reject mismatched inputs");
+        expect_near(pair.race(0).player().elapsed_time, 0.0, "Rejected tick must be atomic");
+        for (int tick = 0; tick < 240; ++tick) {
+            pair.step({VehicleControls{}, VehicleControls{.throttle = 1.0}}, {true, true}, dt);
+        }
+        expect(pair.contacts(0).count > 0 && pair.contacts(1).count > 0,
+               "A rear impact must register on both cars");
+        expect(pair.contacts(0).count == 1, "Sustained contact must count as one event");
+        expect(pair.contacts(0).severity > 0.0, "A moving impact must register severity");
+        expect_near(pair.contacts(0).severity, pair.contacts(1).severity,
+                    "Contact severity must be shared symmetrically");
+        const double elapsed = pair.race(0).player().elapsed_time;
+        pair.step({throttle, throttle}, {false, false}, dt);
+        expect_near(pair.race(0).player().elapsed_time, elapsed, "Retired cars must stop stepping");
+    }
 }
 
 int main() {
@@ -560,6 +749,8 @@ int main() {
         test_speed_dependent_steering();
         test_track_boundaries();
         test_circuit_runoff_boundaries();
+        test_sunset_elevation();
+        test_turn_one_surface_recovery();
         test_race_car_pace();
         test_surface_drag();
         test_world();
@@ -567,6 +758,8 @@ int main() {
         test_automatic_driver();
         test_track_rays();
         test_sensor_fan();
+        test_vehicle_footprint();
+        test_shared_training_grid();
 
         std::cout << "Physics checks passed.\n";
 
