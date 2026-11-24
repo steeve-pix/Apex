@@ -7,7 +7,7 @@
 
 namespace apex::simulation {
     void update_vehicle(VehicleState &vehicle, const VehicleControls &controls, const VehicleSettings &settings,
-                        double dt) {
+                        double dt, math::Vec2 external_acceleration, double external_yaw_rate) {
         constexpr double full_turn =
                 2.0 * std::numbers::pi_v<double>;
 
@@ -33,7 +33,7 @@ namespace apex::simulation {
         vehicle.steering_angle = steering_angle;
 
         const double yaw_rate =
-                forward_speed / settings.wheelbase * std::tan(steering_angle);
+                forward_speed / settings.wheelbase * std::tan(steering_angle) + external_yaw_rate;
 
         vehicle.heading = std::remainder(vehicle.heading + yaw_rate * dt, full_turn);
 
@@ -55,7 +55,7 @@ namespace apex::simulation {
         const math::Vec2 thrust_direction{forward.x * throttle, forward.y * throttle};
 
         const auto previous_position = vehicle.body.position;
-        update_body(vehicle.body, thrust_direction, motion, dt);
+        update_body(vehicle.body, thrust_direction, motion, dt, external_acceleration);
         vehicle.forward_travel += (vehicle.body.position.x - previous_position.x) * forward.x
                                   + (vehicle.body.position.y - previous_position.y) * forward.y;
 

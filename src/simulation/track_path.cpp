@@ -8,8 +8,22 @@
 #include <limits>
 
 namespace apex::simulation {
-    TrackPath::TrackPath(std::vector<math::Vec2> points)
-        : points_{std::move(points)} {
+    TrackPath::TrackPath(std::vector<math::Vec2> points, std::vector<TrackElevationPoint> elevation)
+        : points_{std::move(points)}, elevation_{std::move(elevation)} {
+        if (!elevation_.empty()) {
+            if (elevation_.size() < 2 || elevation_.front().lap_fraction != 0.0
+                || elevation_.back().lap_fraction != 1.0 || elevation_.front().height != elevation_.back().height) {
+                throw std::invalid_argument("Track elevation must cover the lap and join at the same height");
+            }
+            double previous_fraction = -1.0;
+            for (const auto &point : elevation_) {
+                if (!(point.lap_fraction > previous_fraction) || !std::isfinite(point.height)) {
+                    throw std::invalid_argument("Track elevation points must be ordered and finite");
+                }
+                previous_fraction = point.lap_fraction;
+            }
+        }
+
         if (points_.size() < 3) {
             throw std::invalid_argument("A closed track requires at least three points");
         }
@@ -54,6 +68,33 @@ namespace apex::simulation {
 
     double TrackPath::length() const noexcept {
         return cumulative_lengths_.back();
+    }
+
+    double TrackPath::distance_at_point(std::size_t index) const noexcept {
+        return cumulative_lengths_[index];
+    }
+
+    TrackElevation TrackPath::elevation_at(double distance_along_track) const {
+        if (elevation_.empty()) {
+            return {};
+        }
+        if (!std::isfinite(distance_along_track)) {
+            throw std::invalid_argument("Track elevation distance must be finite");
+        }
+        double fraction = std::fmod(distance_along_track, length()) / length();
+        if (fraction < 0.0) {
+            fraction += 1.0;
+        }
+        if (fraction >= 1.0) {
+            fraction = 0.0;
+        }
+        const auto end = std::ranges::upper_bound(elevation_, fraction, {}, &TrackElevationPoint::lap_fraction);
+        const auto start = std::prev(end);
+        const double span = end->lap_fraction - start->lap_fraction;
+        const double t = (fraction - start->lap_fraction) / span;
+        // Ease to zero grade at each crest and valley.
+        return {std::lerp(start->height, end->height, t * t * (3.0 - 2.0 * t)),
+                (end->height - start->height) * 6.0 * t * (1.0 - t) / (span * length())};
     }
 
     TrackSample TrackPath::sample_at(double distance_along_track) const {
@@ -103,6 +144,14 @@ namespace apex::simulation {
             .position = {std::lerp(start.x, end.x, fraction), std::lerp(start.y, end.y, fraction)},
             .tangent = {dx / segment_length, dy / segment_length}
         };
+    }
+
+    double TrackPath::bend_at(double distance_along_track) const {
+        constexpr double probe = .58;
+        const auto entry = sample_at(distance_along_track - probe).tangent;
+        const auto exit = sample_at(distance_along_track + probe).tangent;
+        return std::atan2(entry.x * exit.y - entry.y * exit.x,
+                          entry.x * exit.x + entry.y * exit.y);
     }
 
     TrackProjection TrackPath::project(const math::Vec2 &position) const {
